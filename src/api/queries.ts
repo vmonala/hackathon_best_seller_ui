@@ -1,11 +1,16 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from './client'
-import type { SegmentQuery } from './types'
+import type { SegmentQuery, SellerSegmentQuery } from './types'
 
 export const queryKeys = {
   segments: (q: SegmentQuery) => ['segments', q] as const,
   segment: (id: string) => ['segment', id] as const,
   facets: () => ['facets'] as const,
+  sellerSegments: (q: SellerSegmentQuery) => ['seller-segments', q] as const,
+  sellerSegment: (id: string) => ['seller-segment', id] as const,
+  sellerSummary: () => ['seller-summary'] as const,
+  platforms: () => ['seller-platforms'] as const,
+  platformSegments: (id: string) => ['seller-platform-segments', id] as const,
 }
 
 export function useSegments(query: SegmentQuery) {
@@ -35,5 +40,47 @@ export function useFacets() {
 export function useAskDiscovery() {
   return useMutation({
     mutationFn: (question: string) => api.askDiscovery(question),
+  })
+}
+
+/* ---------- Data Seller Insights ---------- */
+
+export function useSellerSegments(query: SellerSegmentQuery) {
+  return useQuery({
+    queryKey: queryKeys.sellerSegments(query),
+    queryFn: () => api.listSellerSegments(query),
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useSellerSegment(id: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.sellerSegment(id ?? ''),
+    queryFn: () => api.getSellerSegment(id!),
+    enabled: Boolean(id),
+  })
+}
+
+export function useSellerSummary() {
+  return useQuery({
+    queryKey: queryKeys.sellerSummary(),
+    queryFn: () => api.getSellerSummary(),
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function usePlatforms() {
+  return useQuery({
+    queryKey: queryKeys.platforms(),
+    queryFn: () => api.getPlatforms(),
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function usePlatformSegments(platformId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.platformSegments(platformId ?? ''),
+    queryFn: () => api.getPlatformSegments(platformId!),
+    enabled: Boolean(platformId),
   })
 }

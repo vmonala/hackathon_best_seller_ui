@@ -166,3 +166,126 @@ export interface AiDiscoveryResponse {
   candidateSegmentIds: string[]
   totalCandidates: number
 }
+
+/* ---------- Data Seller Insights ---------- */
+
+/**
+ * Labels a seller's segment can earn from delivered Marketplace usage.
+ * The six `demand` labels are the ones buyers see on a listing; the four
+ * `attention` labels are private to the seller.
+ */
+export type SellerLabel =
+  | 'best_seller'
+  | 'top_campaign_spend'
+  | 'most_impressions'
+  | 'multi_platform'
+  | 'rising'
+  | 'repeat_buyers'
+  | 'dormant'
+  | 'distributed_not_delivering'
+  | 'requested_not_distributed'
+  | 'single_buyer_concentration'
+
+/** Label filter, plus the two roll-ups the summary tiles filter by. */
+export type SellerLabelFilter = SellerLabel | 'needs_attention' | 'no_labels'
+
+export type SellerSortKey = 'revenue_rank' | 'revenue' | 'buyers_with_revenue'
+
+export interface SellerSegment {
+  /** DMS segment ID */
+  id: string
+  /** Full path, e.g. "123Push > Consumer > Health and Wellness > Dry Eyes" */
+  fullPath: string
+  /** Everything up to and including the first ">" — shown greyed */
+  pathPrefix: string
+  /** The remainder of the path, shown in black */
+  name: string
+  /** e.g. "Syndicated" or "Custom (Private)" */
+  segmentType: string
+  revenueRank: number
+  revenue90d: number
+  buyersRequested: number
+  buyersDistributing: number
+  buyersWithRevenue: number
+  labels: SellerLabel[]
+  /** Destinations the segment is live on, strongest first */
+  destinations: string[]
+  impressions90d: number
+  /** Revenue change vs the prior 90 days; null when there is no baseline */
+  growthPct: number | null
+}
+
+export interface SellerEvidence {
+  /** null when there is no delivery to attribute */
+  attributionConfidence: string | null
+  usageDirectlyAttributed: string
+  labelsLastRecomputed: string
+  reportingWindowStart: string
+  reportingWindowEnd: string
+}
+
+export interface SellerSegmentDetail extends SellerSegment {
+  evidence: SellerEvidence
+  /** Present only when the segment carries an attention label */
+  suggestedAction?: string
+}
+
+export interface SellerSummaryTile {
+  key: SellerLabelFilter
+  label: string
+  count: number
+  tone: 'default' | 'warn'
+}
+
+export interface ChannelPerformance {
+  channel: string
+  status: 'Strong' | 'Lagging' | 'Stable'
+  activeSegments: number
+  /** e.g. "Slower Growth Compared to Last Month" */
+  trend: string
+  bestSellers: number
+  needAttention: number
+}
+
+export interface SellerInsightsSummary {
+  tiles: SellerSummaryTile[]
+  channels: ChannelPerformance[]
+  /** Window the labels were computed over, for the Overview hint line */
+  labelsLastRecomputed: string
+}
+
+export interface PlatformPerformance {
+  id: string
+  name: string
+  /** Single-character mark drawn in the platform tile */
+  glyph: string
+  /** Hex brand colour, without the leading "#" */
+  color: string
+  status: 'Optimal' | 'Lagging' | 'Stalled' | 'Stable'
+  activeSegments: number
+  revenueLastMonth: number
+  /** e.g. "Faster Growth" */
+  growth: string
+  bestSellers: number
+  needAttention: number
+}
+
+/** One row of a platform drill-down; metrics are destination-specific. */
+export interface PlatformSegmentRow {
+  segmentId: string
+  fullPath: string
+  pathPrefix: string
+  name: string
+  revenuePriorMonth: number
+  growthPct: number | null
+  impressions: number
+  labels: SellerLabel[]
+  /** Free-text destination context, e.g. "Facebook (distributed 74 days ago)" */
+  destinations: string
+}
+
+export interface SellerSegmentQuery {
+  search?: string
+  label?: SellerLabelFilter
+  sort?: SellerSortKey
+}

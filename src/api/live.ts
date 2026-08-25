@@ -2,10 +2,16 @@ import { apiFetch } from './http'
 import type {
   AiDiscoveryResponse,
   Paginated,
+  PlatformPerformance,
+  PlatformSegmentRow,
   Segment,
   SegmentDetail,
   SegmentFacets,
   SegmentQuery,
+  SellerInsightsSummary,
+  SellerSegment,
+  SellerSegmentDetail,
+  SellerSegmentQuery,
 } from './types'
 
 /**
@@ -16,6 +22,12 @@ import type {
  *   GET  /segments/{id}       -> SegmentDetail
  *   GET  /segments/facets     -> SegmentFacets
  *   POST /discovery/ask       -> AiDiscoveryResponse
+ *
+ *   GET  /seller/segments                    -> Paginated[SellerSegment]
+ *   GET  /seller/segments/{id}               -> SellerSegmentDetail
+ *   GET  /seller/summary                     -> SellerInsightsSummary
+ *   GET  /seller/platforms                   -> list[PlatformPerformance]
+ *   GET  /seller/platforms/{id}/segments     -> list[PlatformSegmentRow]
  */
 export const liveApi = {
   listSegments(query: SegmentQuery): Promise<Paginated<Segment>> {
@@ -48,5 +60,33 @@ export const liveApi = {
       method: 'POST',
       body: JSON.stringify({ question }),
     })
+  },
+
+  listSellerSegments(query: SellerSegmentQuery): Promise<Paginated<SellerSegment>> {
+    return apiFetch<Paginated<SellerSegment>>('/seller/segments', {
+      params: {
+        search: query.search,
+        label: query.label,
+        sort: query.sort,
+      },
+    })
+  },
+
+  getSellerSegment(id: string): Promise<SellerSegmentDetail> {
+    return apiFetch<SellerSegmentDetail>(`/seller/segments/${encodeURIComponent(id)}`)
+  },
+
+  getSellerSummary(): Promise<SellerInsightsSummary> {
+    return apiFetch<SellerInsightsSummary>('/seller/summary')
+  },
+
+  getPlatforms(): Promise<PlatformPerformance[]> {
+    return apiFetch<PlatformPerformance[]>('/seller/platforms')
+  },
+
+  getPlatformSegments(platformId: string): Promise<PlatformSegmentRow[]> {
+    return apiFetch<PlatformSegmentRow[]>(
+      `/seller/platforms/${encodeURIComponent(platformId)}/segments`,
+    )
   },
 }

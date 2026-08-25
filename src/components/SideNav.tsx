@@ -6,7 +6,7 @@ interface NavGroup {
   icon: string
   title: string
   green?: boolean
-  items: { label: string; to?: string }[]
+  items: { label: string; to?: string; tag?: string }[]
 }
 
 const GROUPS: NavGroup[] = [
@@ -20,6 +20,7 @@ const GROUPS: NavGroup[] = [
       { label: 'Sell Data' },
       { label: 'Storefront' },
       { label: 'Buy Data', to: '/segments' },
+      { label: 'Data Seller Insights', to: '/seller-insights', tag: 'New' },
     ],
   },
   {
@@ -106,6 +107,7 @@ export function SideNav() {
                   }
                 >
                   {item.label}
+                  {item.tag && <NavTag>{item.tag}</NavTag>}
                 </NavLink>
               ) : (
                 <div
@@ -124,6 +126,14 @@ export function SideNav() {
         <span className="ml-auto text-[9px] opacity-70">▴</span>
       </div>
     </aside>
+  )
+}
+
+function NavTag({ children }: { children: string }) {
+  return (
+    <span className="ml-2 rounded-[3px] border border-current px-1 py-px text-[9.5px] font-bold uppercase tracking-[0.4px] opacity-75">
+      {children}
+    </span>
   )
 }
 
