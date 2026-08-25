@@ -10,7 +10,9 @@ FastAPI backend with one environment variable.
 ## Documentation
 
 - **[READ.md](./READ.md)** — install, run locally, troubleshooting. Start here.
-- **README.md** (this file) — architecture and backend contract.
+- **README.md** (this file) — architecture and backend contract summary.
+- **[BACKEND_API.md](./BACKEND_API.md)** — the full API spec for the backend team:
+  every endpoint, query parameter and response field, plus Pydantic stubs.
 - **[PLAN.md](./PLAN.md)** — what was built, why, and what's left.
 
 ## Getting started
@@ -51,8 +53,13 @@ you always know which source you're looking at.
 
 ## Backend contract
 
-`src/api/types.ts` is the contract. `src/api/live.ts` is the only file that
-knows about routes and query-parameter names — adjust it if your routes differ.
+**[BACKEND_API.md](./BACKEND_API.md) is the full specification** — field-level
+tables for every response, filter semantics, error and auth behaviour, and
+paste-ready Pydantic models. The summary below is the shape of it.
+
+`src/api/types.ts` is the contract in code. `src/api/live.ts` is the only file
+that knows about routes and query-parameter names — adjust it if your routes
+differ.
 
 | Method | Path | Returns |
 | --- | --- | --- |
