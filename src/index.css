@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-white text-ink antialiased;
+    font-family: Carlito, Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+}
+
+@layer components {
+  /* Performance / destination badges, ported from the mockup. */
+  .bdg {
+    @apply inline-flex items-center gap-1.5 rounded px-2 py-[3px] text-[11.5px] font-bold whitespace-nowrap;
+  }
+  .bdg-top {
+    @apply bg-amber-soft text-amber-ink;
+  }
+  .bdg-reuse {
+    @apply bg-[#D8F6E4] text-[#0A6B3C];
+  }
+  .bdg-trend {
+    @apply bg-violet-soft text-violet-ink;
+  }
+  .bdg-multi {
+    @apply bg-blue-soft text-blue-ink;
+  }
+  .bdg-new {
+    @apply bg-teal-soft text-teal-ink;
+  }
+  .bdg-dest {
+    @apply border border-line bg-line2 font-semibold text-[#3C4043];
+  }
+
+  .field {
+    @apply flex h-[41px] items-center gap-2 rounded-md border border-[#C9CDD3] bg-white px-3.5 text-sm;
+  }
+  .field-on {
+    @apply border-indigo bg-[#F7F5FF] font-semibold text-indigo-ink;
+  }
+
+  .sec-label {
+    @apply mb-2.5 text-[12px] font-bold uppercase tracking-[0.8px] text-muted;
+  }
+}

@@ -1,0 +1,187 @@
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import type { AiDiscoveryResponse } from '@/api/types'
+import { LabelBadge, PlatformBadge, TextBadge } from './Badge'
+import { renderBold } from '@/lib/markdown'
+
+interface DiscoveryPanelProps {
+  onClose: () => void
+  onAsk: (question: string) => void
+  isPending: boolean
+  result?: AiDiscoveryResponse
+  error?: Error | null
+}
+
+const SUGGESTIONS = [
+  'I need the segments in the retail category for smart watches to activate to facebook and snapchat destination. Give me the most popular segments',
+  'Show me the trending smartwatch segments only',
+  'Compare cost per 1,000 impressions across wearables segments',
+]
+
+export function DiscoveryPanel({
+  onClose,
+  onAsk,
+  isPending,
+  result,
+  error,
+}: DiscoveryPanelProps) {
+  const [input, setInput] = useState('')
+
+  const submit = (text: string) => {
+    const q = text.trim()
+    if (!q || isPending) return
+    onAsk(q)
+    setInput('')
+  }
+
+  return (
+    <div className="flex w-[620px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white px-[26px] py-[22px]">
+      <div className="flex items-center gap-2.5 text-[22px] font-bold">
+        <span className="text-[19px] text-indigo">✦</span>
+        AI Segment Discovery
+        <button
+          onClick={onClose}
+          aria-label="Close discovery panel"
+          className="ml-auto text-base text-muted hover:text-ink"
+        >
+          ✕
+        </button>
+      </div>
+
+      {!result && !isPending && (
+        <div className="mt-6">
+          <p className="text-[14.5px] leading-[1.6] text-ink2">
+            Describe the audience you want to reach and the destinations you plan to
+            activate on. Results are ranked by delivered marketplace usage.
+          </p>
+          <div className="mt-4 space-y-2">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => submit(s)}
+                className="w-full rounded-lg border border-line px-4 py-3 text-left text-[13px] leading-[1.5] text-ink2 transition-colors hover:border-indigo hover:bg-indigo-soft"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {result && (
+        <div className="mb-[18px] mt-5 rounded-[10px] border border-[#E5E8EC] bg-[#F4F6F8] px-4 py-3.5">
+          <div className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.8px] text-muted2">
+            You
+          </div>
+          <p className="text-[14.5px] leading-[1.5] text-ink2">{result.question}</p>
+        </div>
+      )}
+
+      {isPending && <ThinkingState />}
+
+      {error && (
+        <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+          Could not reach the discovery service: {error.message}
+        </div>
+      )}
+
+      {result && !isPending && (
+        <div className="text-[14.5px] leading-[1.62] text-ink2">
+          <p className="mb-3.5">{renderBold(result.lead)}</p>
+
+          {result.recommendations.map((rec) => (
+            <div
+              key={rec.segmentId}
+              className="mb-[11px] rounded-[10px] border border-line px-[15px] py-3.5 transition-colors hover:border-indigo"
+            >
+              <div className="text-[11.5px] font-bold tracking-[0.6px] text-muted2">
+                {String(rec.rank).padStart(2, '0')} · MARKETPLACE SCORE{' '}
+                {rec.marketplaceScore}
+              </div>
+              <Link
+                to={`/segments/${rec.segmentId}`}
+                className="my-[3px] block text-sm font-bold leading-[1.35] hover:text-indigo-ink hover:underline"
+              >
+                {rec.fullPath}
+              </Link>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {rec.labels
+                  .filter((l) => l !== 'proven_multi_platform')
+                  .map((l) => (
+                    <LabelBadge key={l} label={l} />
+                  ))}
+                {rec.labels.includes('proven_multi_platform') && (
+                  <PlatformBadge count={rec.platformCount} />
+                )}
+                {rec.extraBadge && <TextBadge>{rec.extraBadge}</TextBadge>}
+              </div>
+              <div className="mt-2.5 flex flex-wrap gap-4 text-[12.5px] text-[#3C4043]">
+                {rec.meta.map((m, i) => (
+                  <span key={i}>{renderBold(m)}</span>
+                ))}
+              </div>
+              <div className="mt-2.5 flex gap-[7px] text-[12.5px] leading-[1.55] text-muted">
+                <span className="font-bold text-green-deep">✦</span>
+                <span>{rec.why}</span>
+              </div>
+            </div>
+          ))}
+
+          <div className="my-4 rounded-lg border border-[#E2DDFB] bg-[#F7F5FF] px-3.5 py-3 text-[12.5px] leading-[1.55] text-indigo-ink">
+            {renderBold(result.note)}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-auto pt-3">
+        <div className="rounded-xl border border-[#D5D9DE] px-[15px] py-3.5 focus-within:border-indigo">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                submit(input)
+              }
+            }}
+            rows={2}
+            placeholder='Ask a follow-up — e.g. "show the trending ones only" or "compare cost per 1,000 impressions"'
+            className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted2"
+          />
+          <div className="mt-3 flex items-center text-[13px] text-muted2">
+            <button className="hover:text-ink">＋ New Exploration</button>
+            <button
+              onClick={() => submit(input)}
+              disabled={!input.trim() || isPending}
+              aria-label="Send"
+              className="ml-auto flex h-[29px] w-[29px] items-center justify-center rounded-full bg-indigo text-[13px] text-white disabled:opacity-40"
+            >
+              ↑
+            </button>
+          </div>
+        </div>
+        <p className="mt-2 text-[11.5px] text-[#9AA0A6]">
+          AI-generated messages. Verify results or contact LiveRamp for help.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function ThinkingState() {
+  return (
+    <div className="mt-5 space-y-3">
+      <div className="flex items-center gap-2 text-[13px] text-muted">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-indigo" />
+        Ranking segments by delivered marketplace usage…
+      </div>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="rounded-[10px] border border-line px-[15px] py-3.5">
+          <div className="h-3 w-40 animate-pulse rounded bg-line2" />
+          <div className="mt-2.5 h-4 w-4/5 animate-pulse rounded bg-line2" />
+          <div className="mt-2.5 h-3 w-2/3 animate-pulse rounded bg-line2" />
+        </div>
+      ))}
+    </div>
+  )
+}
