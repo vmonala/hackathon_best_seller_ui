@@ -194,6 +194,9 @@ const SELECT_WIDTH = 34
 /** Pinned name column: full width, and the narrower one used beside a panel. */
 const NAME_WIDTH = 510
 const NAME_WIDTH_COMPACT = 360
+/** How far the name column can be dragged. */
+const NAME_WIDTH_MIN = 200
+const NAME_WIDTH_MAX = 760
 const ACTIONS_WIDTH = 44
 
 interface SegmentsTableProps {
@@ -246,7 +249,11 @@ export function SegmentsTable({
         .map((c) => c.header)
     : []
 
-  const nameWidth = compact ? NAME_WIDTH_COMPACT : NAME_WIDTH
+  // Null until the header's handle is dragged, so the column keeps following
+  // `compact` — narrowing when a panel opens — right up to the first drag.
+  const [nameWidthOverride, setNameWidthOverride] = useState<number | null>(null)
+  const nameWidth =
+    nameWidthOverride ?? (compact ? NAME_WIDTH_COMPACT : NAME_WIDTH)
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.id))
   const someChecked = rows.some((r) => selected.has(r.id))
 
@@ -315,6 +322,11 @@ export function SegmentsTable({
                 sort={sort}
                 direction={direction}
                 onSort={onSort}
+                resize={{
+                  width: nameWidth,
+                  onResize: setNameWidthOverride,
+                  onReset: () => setNameWidthOverride(null),
+                }}
               >
                 Segment Name
               </Th>
@@ -478,6 +490,7 @@ function Th({
   sort,
   direction,
   onSort,
+  resize,
 }: {
   children?: React.ReactNode
   pinned?: boolean
@@ -488,6 +501,8 @@ function Th({
   sort?: SortKey
   direction?: 'asc' | 'desc'
   onSort?: (key: SortKey) => void
+  /** Makes the column draggable by its right edge. */
+  resize?: ResizeHandleProps
 }) {
   const sortable = Boolean(sortKey && onSort)
   return (
@@ -508,7 +523,68 @@ function Th({
           {direction === 'asc' ? '▲' : '▼'}
         </span>
       )}
+      {resize && <ResizeHandle {...resize} />}
     </th>
+  )
+}
+
+interface ResizeHandleProps {
+  /** The column's current width, which the drag is measured from. */
+  width: number
+  onResize: (width: number) => void
+  /** Double-click hands the width back to the default. */
+  onReset: () => void
+}
+
+/**
+ * Drag the column's right edge to rewidth it.
+ *
+ * The pointer is captured on the handle, so the drag keeps tracking after it
+ * leaves the 7px strip — a resize that stops the moment the cursor drifts off
+ * the edge is unusable. `stopPropagation` keeps the drag off the header's sort
+ * handler, which the handle sits inside of.
+ */
+function ResizeHandle({ width, onResize, onReset }: ResizeHandleProps) {
+  const onPointerDown = (e: React.PointerEvent<HTMLSpanElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const handle = e.currentTarget
+    const startX = e.clientX
+    handle.setPointerCapture(e.pointerId)
+
+    const move = (ev: PointerEvent) =>
+      onResize(
+        Math.min(
+          NAME_WIDTH_MAX,
+          Math.max(NAME_WIDTH_MIN, width + ev.clientX - startX),
+        ),
+      )
+    const up = () => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', up)
+      handle.removeEventListener('pointercancel', up)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', up)
+    handle.addEventListener('pointercancel', up)
+  }
+
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize Segment Name column"
+      title="Drag to resize — double-click to reset"
+      onPointerDown={onPointerDown}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => {
+        e.stopPropagation()
+        onReset()
+      }}
+      className="group absolute right-[-3px] top-0 z-30 flex h-full w-[7px] cursor-col-resize touch-none items-stretch justify-center"
+    >
+      <span className="w-[1.5px] bg-transparent transition-colors group-hover:bg-indigo" />
+    </span>
   )
 }
 
