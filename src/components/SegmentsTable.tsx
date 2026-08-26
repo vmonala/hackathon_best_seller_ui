@@ -142,7 +142,7 @@ const METRIC_COLUMNS: MetricColumn[] = [
   },
   // Impressions and Date Added are on the row, so they are neither hidden nor
   // footnoted — they are what the impressions and lifecycle labels read from,
-  // and a chip claiming "top 10% by impressions" needs the number in reach of
+  // and a chip claiming "top 5% by impressions" needs the number in reach of
   // the reader.
   {
     id: 'impressions90d',
@@ -191,12 +191,18 @@ const METRIC_COLUMNS: MetricColumn[] = [
 const AVAILABLE_COLUMNS = METRIC_COLUMNS
 
 const SELECT_WIDTH = 34
-/** Pinned name column: full width, and the narrower one used beside a panel. */
-const NAME_WIDTH = 510
-const NAME_WIDTH_COMPACT = 360
 /** How far the name column can be dragged. */
 const NAME_WIDTH_MIN = 200
 const NAME_WIDTH_MAX = 760
+/**
+ * Pinned name column: it opens at its widest, because the full taxonomy path is
+ * the thing a buyer scans by and truncating it by default hides the only column
+ * that is not a number. Dragging the handle takes width away; it cannot add
+ * any. Beside an open detail panel it starts narrower, where the space is not
+ * there to give.
+ */
+const NAME_WIDTH = NAME_WIDTH_MAX
+const NAME_WIDTH_COMPACT = 360
 const ACTIONS_WIDTH = 44
 
 interface SegmentsTableProps {
@@ -273,7 +279,24 @@ export function SegmentsTable({
   return (
     <div className="relative mt-2.5">
       {/* The gear floats above the scroller so it stays reachable at any
-          horizontal scroll position, like the mockup. */}
+          horizontal scroll position, like the mockup. The grouping toggle sits
+          beside it: label grouping is the default order, so there has to be a
+          way back to it after a header click sorts by a metric. */}
+      {onSort && (
+        <button
+          onClick={() => onSort('labels')}
+          aria-pressed={sort === 'labels'}
+          title="Stack segments carrying the same labels together"
+          className={cn(
+            'absolute right-7 top-1.5 z-30 flex h-6 items-center gap-1 rounded px-1.5 text-[11.5px] font-semibold',
+            sort === 'labels'
+              ? 'bg-line2 text-indigo-ink'
+              : 'bg-white text-[#3C4043] hover:text-indigo-ink',
+          )}
+        >
+          ▤ Group by labels
+        </button>
+      )}
       <ColumnPicker visible={visible} onChange={setVisible} />
 
       <div className="overflow-x-auto">
@@ -509,7 +532,11 @@ function Th({
     <th
       style={pinned ? { left } : undefined}
       className={cn(
-        'border-b-[1.5px] border-[#C9CDD3] bg-white px-2.5 py-3 text-left align-bottom text-[12.5px] font-bold leading-[1.25] text-[#202124]',
+        // The metrics are centred under their headers; the pinned block —
+        // checkbox and Segment Name — stays left, because a taxonomy path that
+        // starts at a different x on every row cannot be scanned.
+        'border-b-[1.5px] border-[#C9CDD3] bg-white px-2.5 py-3 align-bottom text-[12.5px] font-bold leading-[1.25] text-[#202124]',
+        pinned ? 'text-left' : 'text-center',
         compact && 'text-[11.5px]',
         pinned && 'sticky z-20',
         divider && 'border-r border-r-line',
@@ -608,6 +635,7 @@ function Td({
       style={pinned ? { left } : undefined}
       className={cn(
         'border-b border-line2 px-2.5 py-3 align-top text-[13.5px] tabular-nums',
+        pinned ? 'text-left' : 'text-center',
         compact && 'text-[12.5px]',
         // A pinned cell scrolls over the metrics, so it needs its own opaque
         // background — including the row states, which would otherwise show

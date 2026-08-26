@@ -33,9 +33,11 @@ export function useSegmentQueryParams() {
       destinations: params.getAll('dest') as DestinationId[],
       sellers: params.getAll('seller'),
       statuses: params.getAll('status'),
-      // Delivered reach, not the internal marketplace score: the score earns
-      // the performance labels but is not shown on the list page.
-      sort: (params.get('sort') as SortKey | null) ?? 'cookie_reach',
+      // Grouped by label set by default: the labels are the reason a buyer is
+      // on this page, and stacking the segments that earned the same ones puts
+      // "what works" next to the segments it applies to. Every other sort is
+      // one header click away.
+      sort: (params.get('sort') as SortKey | null) ?? 'labels',
       direction: (params.get('dir') as 'asc' | 'desc' | null) ?? 'desc',
       page: Math.max(1, Number(params.get('page')) || 1),
       pageSize: parsePageSize(params.get('size')),
