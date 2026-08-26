@@ -1,58 +1,80 @@
-import type { SegmentFeatureRow } from '../backend'
+import type { SegmentFeatureRow, SegmentLabelRow } from '../backend'
 import type {
   DestinationDelivery,
   DestinationId,
   EarnedLabelExplanation,
   FacetOption,
-  PerformanceLabel,
+  LabelDefinition,
   Segment,
   SegmentDetail,
   SegmentFacets,
+  SegmentLabel,
   SegmentPerformance,
+  UsageLevel,
 } from '../types'
 import { destinationName, registerDestinationName } from '@/lib/labels'
 import { SYNTHETIC_CATALOG_METRICS } from '@/lib/metricLabels'
 
 /**
- * Translates `/v1/segments` catalog rows into the `Segment` shape the UI
- * renders.
+ * Translates captured `/v1/segments` catalogue rows into the `Segment` shape
+ * the UI renders.
  *
- * The backend reports *delivered marketplace usage* over a single ~30-day
- * window. It does not report catalogue reach, rate cards, per-buyer channel
- * splits, a creation date, or a prior-period baseline. So:
+ * The feed reports a segment's **distribution footprint** (which platforms and
+ * buyers it is enabled on) and its **measured Connect reach** (cookie, iOS,
+ * Android, input records). Both are real numbers straight off the row, which is
+ * most of the table:
  *
- *   - `cpc` carries the **effective CPM** (gross data revenue per 1,000
- *     delivered impressions), and `cookieReach` carries **delivered
- *     impressions**. `src/lib/metricLabels.ts` relabels both columns in live
- *     mode so the header matches the number underneath it.
- *   - `advertiserDirectPctOfMedia` carries the share of enabled buyers that
- *     actually delivered, relabelled the same way.
- *   - `trending_up` and `new_gaining_traction` are never awarded: there is no
- *     prior-period baseline and no date-added in the payload to earn them from.
- *   - Every catalog row is marketplace-available; per-user request state lives
- *     in a different system, so `status` is always 'available'.
+ *   - `cookieReach`, `iosReach`, `androidReach` and `inputRecords` are
+ *     measured, so `reachMeasured` is true and the columns are not footnoted as
+ *     estimates.
+ *   - `platformCount` and `destinations` come from `active_platforms` and
+ *     `active_platform_names`, sized by `reach_by_platform`.
  *
- * Anything derived from a catalogue-wide percentile (the marketplace score,
- * the `top_performer` and `frequently_reused` cut-offs) needs every row in
- * hand, which is why mapping happens in `buildCatalog` rather than per row.
+ * Delivered impressions and the date the segment was added are on the row too —
+ * `impressions_90d`, `impressions_prior_90d`, `added_at` — but they are
+ * generated for the fixture rather than captured, which is where the
+ * impressions and lifecycle labels read from. See the docblock in
+ * `mock/catalogRows.ts`.
+ *
+ * What the feed carries *no* signal for at all is revenue. So:
+ *
+ *   - `cpc` and `advertiserDirectPctOfMedia` are **derived stand-ins**, not
+ *     measurements. See `synthesiseCatalogAttributes`.
+ *   - Every catalogue row is marketplace-available; per-user request state
+ *     lives in a different system, so `status` is always 'available'.
+ *
+ * Labels come off the row's own `label_keys`, which the fixture computed from
+ * catalogue-wide cut-offs. What this module adds is the *reason* each one was
+ * awarded to a given segment, quoting that segment's numbers — see
+ * `explainLabel`. The cut-offs it quotes need every row in hand, which is why
+ * mapping happens in `buildCatalog` rather than per row.
  */
 
-/** Top-N percentile cut-offs the performance labels are earned from. */
-const TOP_PERFORMER_PERCENTILE = 0.05
-const FREQUENTLY_REUSED_PERCENTILE = 0.1
-/** Delivering platforms needed for "proven multi-platform". */
+/** Top-N percentile cut-off the `best_seller` and `top_impressions` labels use. */
+const TOP_DECILE = 0.1
+/** Active platforms needed for the `active_platforms` label. */
 const MULTI_PLATFORM_MIN = 4
+/** How recently a segment must have been added to count as new. */
+const NEW_WINDOW_DAYS = 90
+/** The date the catalogue's `added_at` values and the new window are measured against. */
+const CATALOG_AS_OF = '2026-08-26'
 
 /**
  * Platform names that are the same destination under two spellings. Anything
  * not listed here is *not* dropped — it is slugified into its own destination
- * so every platform the backend reports reaches the UI.
+ * so every platform the feed reports reaches the UI.
  */
 const DESTINATION_ALIASES: Record<string, DestinationId> = {
   snap: 'snapchat',
   twitter: 'x',
   ttd: 'the_trade_desk',
   'trade desk': 'the_trade_desk',
+  'the trade desk': 'the_trade_desk',
+  'google | data marketplace': 'google',
+  'yahoo! (fka verizon media)': 'yahoo',
+  'nexxen (fka amobee)': 'nexxen',
+  'magnite dv+ (rubicon project)': 'magnite',
+  'tapad (a part of experian)': 'tapad',
 }
 
 /** Stable draw order for the destinations the design names explicitly. */
@@ -71,10 +93,25 @@ export interface LiveCatalog {
   segments: Segment[]
   byId: Map<string, { segment: Segment; row: SegmentFeatureRow }>
   facets: SegmentFacets
-  /** Catalogue-wide cut-offs the performance labels were earned from. */
-  thresholds: { reuseMinBuyers: number }
-  /** Usage window the whole dump was computed over. */
-  window: { start: string; end: string }
+  /** The catalogue-wide cut-offs the labels were earned from. */
+  thresholds: LabelThresholds
+  /** The vocabulary, strongest first — the label filter's option list. */
+  vocabulary: LabelDefinition[]
+  /** The freshest reach measurement date across the catalogue. */
+  reachAsOf: string
+}
+
+/**
+ * The cut-offs the percentile labels were awarded against, kept so the reason
+ * on a chip can quote the number the segment had to beat.
+ */
+export interface LabelThresholds {
+  /** Active buyers the top decile of the catalogue starts at. */
+  bestSellerMinBuyers: number
+  /** 90-day impressions the top decile starts at. */
+  topImpressionsMin: number
+  /** The catalogue's median 90-day impressions, which "trending" is measured against. */
+  medianImpressions: number
 }
 
 function splitPath(fullPath: string) {
@@ -93,8 +130,9 @@ function pathTokens(fullPath: string) {
     .filter(Boolean)
 }
 
-function normalisePlatform(name: string) {
-  return name.trim().toLowerCase()
+/** The bare date out of an ISO timestamp, or undefined if there isn't one. */
+function isoDate(timestamp: string | null | undefined) {
+  return timestamp ? timestamp.slice(0, 10) : undefined
 }
 
 /**
@@ -103,7 +141,7 @@ function normalisePlatform(name: string) {
  * their own rather than being discarded.
  */
 function destinationIdFor(name: string): DestinationId | undefined {
-  const normalised = normalisePlatform(name)
+  const normalised = name.trim().toLowerCase()
   if (!normalised) return undefined
 
   const id =
@@ -115,79 +153,101 @@ function destinationIdFor(name: string): DestinationId | undefined {
   return id
 }
 
+/**
+ * The segment's active platforms, sized by how much of its reach each one
+ * carries.
+ *
+ * `reach_by_platform` is the only per-destination number in the feed, so the
+ * usage dots are scaled against the row's own strongest platform rather than
+ * against the catalogue — the question the dots answer is "where is this
+ * segment biggest", not "is this platform big".
+ *
+ * Every active platform is `live`: the feed reports the current enabled
+ * distribution footprint, and carries no separate delivered-impressions signal
+ * that could distinguish an idle distribution from a working one.
+ */
 function mapDestinations(row: SegmentFeatureRow): DestinationDelivery[] {
-  const delivering = new Set<DestinationId>()
-  const distributed = new Set<DestinationId>()
+  const reachFor = row.reach_by_platform ?? {}
+  const peak = Math.max(0, ...Object.values(reachFor))
 
-  for (const name of row.usage_platform_names ?? []) {
-    const id = destinationIdFor(name)
-    if (id) delivering.add(id)
-  }
-  for (const name of row.active_platform_names ?? []) {
-    const id = destinationIdFor(name)
-    if (id) distributed.add(id)
+  const level = (reach: number): UsageLevel => {
+    if (!peak) return 'moderate'
+    const share = reach / peak
+    if (share >= 0.9) return 'very_high'
+    if (share >= 0.75) return 'high'
+    if (share >= 0.55) return 'moderate'
+    return 'low'
   }
 
-  // Named destinations keep their designed order; everything else follows,
-  // alphabetically, so the row is stable across renders.
   const rank = (id: DestinationId) => {
     const i = DESTINATION_ORDER.indexOf(id)
     return i === -1 ? DESTINATION_ORDER.length : i
   }
-  const order = (a: DestinationId, b: DestinationId) =>
-    rank(a) - rank(b) || destinationName(a).localeCompare(destinationName(b))
 
-  // Delivering destinations first — that is what the label filters and the
-  // "proven on destination" facet key off.
-  const live = [...delivering].sort(order)
-  const idle = [...distributed].filter((id) => !delivering.has(id)).sort(order)
-
-  return [
-    ...live.map<DestinationDelivery>((destination) => ({
-      destination,
-      usage: 'high',
-      note: 'delivered impressions in the usage window',
-      live: true,
-    })),
-    ...idle.map<DestinationDelivery>((destination) => ({
-      destination,
-      usage: 'low',
-      note: 'distributed, no delivered impressions',
-      live: false,
-    })),
-  ]
+  return (row.active_platform_names ?? [])
+    .flatMap((name) => {
+      const destination = destinationIdFor(name)
+      if (!destination) return []
+      const reach = reachFor[name] ?? 0
+      return [
+        {
+          destination,
+          usage: level(reach),
+          note: reach
+            ? `${formatCompact(reach)} estimated reach on this platform`
+            : 'distributed, reach not reported',
+          live: true,
+        } satisfies DestinationDelivery,
+      ]
+    })
+    // Strongest first, so the dots read left-to-right by size; named
+    // destinations break ties in their designed order.
+    .sort(
+      (a, b) =>
+        USAGE_WEIGHT[b.usage] - USAGE_WEIGHT[a.usage] ||
+        rank(a.destination) - rank(b.destination) ||
+        destinationName(a.destination).localeCompare(destinationName(b.destination)),
+    )
 }
 
-/** Gross data revenue per 1,000 delivered impressions. */
-function effectiveCpm(row: SegmentFeatureRow) {
-  if (row.impressions <= 0) return 0
-  return (row.gross_data_revenue / row.impressions) * 1000
+const USAGE_WEIGHT: Record<UsageLevel, number> = {
+  very_high: 3,
+  high: 2,
+  moderate: 1,
+  low: 0,
 }
 
-function deliveringBuyerPct(row: SegmentFeatureRow) {
-  if (row.active_buyers <= 0) return 0
-  return Math.min(100, Math.round((row.buyers_with_usage / row.active_buyers) * 100))
+function formatCompact(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`
+  return String(n)
 }
 
 /**
- * Illustrative catalogue attributes for live mode.
+ * Illustrative pricing and media-mix attributes.
  *
- * `/v1/segments` reports delivered usage only: no rate card, no device-level
- * reach, no input record count, no created date. Without them the table is
- * three columns wide, so each one is derived from figures the row *does* carry,
- * at the ratios the design comps use. Two consequences worth knowing:
+ * The rate card and the advertiser-direct media share are commercial attributes
+ * the catalogue feed does not report — it carries distribution, reach and
+ * delivered impressions only. Rather than leaving a third of the table empty,
+ * each one is derived from figures the row *does* carry, at the ratios the
+ * design comps use. Two consequences worth knowing:
  *
  *   - Every value is a deterministic function of the row, so it is stable
  *     across renders, sorts and pages — no reshuffling numbers.
  *   - None of it is measured. The column picker tags these columns "estimated"
  *     and a footnote under the table says so. `VITE_SYNTHETIC_CATALOG_METRICS=false`
- *     turns them off and shows only what the backend reports.
+ *     turns them off and shows only what the feed actually reports.
+ *
+ * The measured reach columns and Date Added are *not* in here — those come
+ * straight off the row in `mapRow`.
  */
 const RATE_CARD_OVER_EFFECTIVE = 1.35
 const CPM_CAP_MULTIPLE = 2.02
-const IOS_PER_IMPRESSION = 0.42
-const ANDROID_PER_IMPRESSION = 0.29
-const INPUT_RECORDS_PER_IMPRESSION = 0.55
+
+/** Price band the derived CPC spans, in dollars per click. */
+const CPC_FLOOR = 0.16
+const CPC_SCARCITY_PREMIUM = 0.22
+const CPC_DEMAND_PREMIUM = 0.09
 
 const DATA_SOURCE_METHODS = ['Declared', 'Modelled', 'Observed'] as const
 const PRECISION_LEVELS = ['Household', 'Individual'] as const
@@ -201,15 +261,53 @@ function pick(id: number, length: number) {
   return Math.abs(id) % length
 }
 
+/**
+ * A derived CPC, in dollars.
+ *
+ * Priced the way a scarce audience is: a floor, plus a premium for being small
+ * relative to the catalogue (`scarcity`, 1 for the narrowest row), plus a
+ * smaller premium for being in demand across many buyers (`demand`).
+ */
+function deriveCpc(scarcity: number, demand: number) {
+  return round2(
+    CPC_FLOOR + CPC_SCARCITY_PREMIUM * scarcity + CPC_DEMAND_PREMIUM * demand,
+  )
+}
+
+/** The share a segment on a single platform is given, and the drop per platform. */
+const DIRECT_PCT_CEILING = 34
+const DIRECT_PCT_PER_PLATFORM = 3
+
+/**
+ * A derived advertiser-direct share of media, as a percentage.
+ *
+ * Stands in for "how much of this segment's media is bought directly rather
+ * than through a platform's own marketplace", and falls as the footprint widens:
+ * a segment on one platform is mostly a direct relationship, one on nine is
+ * mostly flowing through those platforms' own marketplaces.
+ *
+ * Note it is keyed on the platform count alone, not on a buyers-per-platform
+ * ratio. `active_buyers`, `active_platforms` and `active_destination_accounts`
+ * are equal on every row in this catalogue — one buyer, one account, one
+ * platform — so any ratio between them is the constant 1 and would flatten this
+ * to a single value for all eighteen rows.
+ */
+function deriveAdvertiserDirectPct(row: SegmentFeatureRow) {
+  const platforms = Math.max(1, row.active_platforms)
+  return Math.max(
+    4,
+    DIRECT_PCT_CEILING - DIRECT_PCT_PER_PLATFORM * (platforms - 1),
+  )
+}
+
 function synthesiseCatalogAttributes(
   row: SegmentFeatureRow,
   segment: Segment,
 ): Partial<Segment> {
   const id = row.dms_segment_id
-  // A list rate sits above the realised effective CPM: not every delivered
-  // impression bills at the top of the rate card.
-  const cpm = round2(segment.cpc * RATE_CARD_OVER_EFFECTIVE)
-  const impressions = Math.max(0, row.impressions)
+  // A list rate sits above the realised CPC: not every impression bills at the
+  // top of the rate card.
+  const cpm = round2(segment.cpc * RATE_CARD_OVER_EFFECTIVE * 11.25)
 
   return {
     cpm,
@@ -218,36 +316,39 @@ function synthesiseCatalogAttributes(
       100,
       segment.advertiserDirectPctOfMedia + 4 + pick(id, 7),
     ),
-    iosReach: Math.round(impressions * IOS_PER_IMPRESSION),
-    androidReach: Math.round(impressions * ANDROID_PER_IMPRESSION),
-    inputRecords: Math.round(impressions * INPUT_RECORDS_PER_IMPRESSION),
     dataSourceMethod: DATA_SOURCE_METHODS[pick(id, DATA_SOURCE_METHODS.length)],
     dataSourceDetail:
       row.segment_type === 'Standard' ? 'Syndicated taxonomy' : row.segment_type,
     precisionLevel: PRECISION_LEVELS[pick(id, PRECISION_LEVELS.length)],
-    dateLastRefreshed: row.usage_end_date,
-    reachAsOf: row.usage_end_date,
-    inputRecordsAsOf: row.usage_end_date,
-    // The window start is the earliest date the row evidences, so an estimated
-    // "added" date is that, less 1–24 months.
-    dateAdded: monthsBefore(row.usage_start_date, 1 + pick(id, 24)),
   }
 }
 
-/** ISO date `months` before `iso`. */
-function monthsBefore(iso: string, months: number) {
-  const d = new Date(`${iso}T00:00:00`)
-  if (Number.isNaN(d.getTime())) return iso
-  d.setMonth(d.getMonth() - months)
-  return d.toISOString().slice(0, 10)
+function mapLabelDefinition(row: SegmentLabelRow): LabelDefinition {
+  return {
+    key: row.label_key as SegmentLabel,
+    name: row.display_name,
+    description: row.description,
+    category: row.category,
+    priority: row.priority,
+  }
 }
 
-function mapRow(
-  row: SegmentFeatureRow,
-  marketplaceScore: number,
-  labels: PerformanceLabel[],
-): Segment {
+interface RowContext {
+  marketplaceScore: number
+  labels: SegmentLabel[]
+  labelReasons: Partial<Record<SegmentLabel, string>>
+  /** 1 for the narrowest cookie reach in the catalogue, 0 for the widest. */
+  scarcity: number
+  /** 1 for the most widely bought row, 0 for the least. */
+  demand: number
+}
+
+function mapRow(row: SegmentFeatureRow, ctx: RowContext): Segment {
   const tokens = pathTokens(row.segment_name)
+  // Reach is measured, and this timestamp dates both the reach figures and the
+  // refresh. It is *not* the created date — `added_at` is a field of its own.
+  const measuredOn = isoDate(row.cookie_reach_updated_at) ?? ''
+
   const segment: Segment = {
     id: String(row.dms_segment_id),
     fullPath: row.segment_name,
@@ -256,31 +357,56 @@ function mapRow(
     // is the provider's own prefix, which is what buyers recognise.
     seller: tokens[0] ?? 'Unknown',
     status: 'available',
-    marketplaceScore,
-    labels,
-    platformCount: row.platforms_with_usage,
+    marketplaceScore: ctx.marketplaceScore,
+    labels: ctx.labels,
+    labelReasons: ctx.labelReasons,
+    platformCount: row.active_platforms,
     destinations: mapDestinations(row),
-    advertiserDirectPctOfMedia: deliveringBuyerPct(row),
-    cpc: effectiveCpm(row),
-    cookieReach: Math.round(row.impressions),
-    // No creation date in the payload; the usage window end is the only date
-    // available. The Date Added column is hidden in live mode.
-    dateAdded: row.usage_end_date,
     category: tokens[1] ?? tokens[0] ?? 'Uncategorised',
     description: row.segment_description ?? undefined,
     segmentType: row.segment_type,
+
+    // Measured, straight off the row.
+    cookieReach: row.cookie_reach,
+    iosReach: row.ios_reach,
+    androidReach: row.android_reach,
+    inputRecords: row.input_records,
+    reachMeasured: true,
+    reachAsOf: measuredOn,
+    inputRecordsAsOf: measuredOn,
+    dateLastRefreshed: measuredOn,
+    dateAdded: row.added_at,
+    impressions90d: row.impressions_90d,
+    // 0 on the row means "no comparable prior period", which is a different
+    // statement from "nothing delivered" — so it becomes absent here, and the
+    // growth figure it would feed is absent with it.
+    impressionsPrior90d: row.impressions_prior_90d || undefined,
+    impressionsGrowthPct: row.impressions_prior_90d
+      ? Math.round(
+          ((row.impressions_90d - row.impressions_prior_90d) /
+            row.impressions_prior_90d) *
+            100,
+        )
+      : undefined,
+
+    // Derived — see `synthesiseCatalogAttributes`.
+    cpc: deriveCpc(ctx.scarcity, ctx.demand),
+    advertiserDirectPctOfMedia: deriveAdvertiserDirectPct(row),
   }
 
-  // The rate card, device-level reach, input record count, provenance and
-  // created date are not in this feed. Off, they render "-"; on, they carry a
-  // derived stand-in so the table is not three columns wide.
+  // The rate card, the programmatic media share and provenance are not in this
+  // feed. Off, they render "-"; on, they carry a derived stand-in so the table
+  // is not half empty.
   return SYNTHETIC_CATALOG_METRICS
     ? { ...segment, ...synthesiseCatalogAttributes(row, segment) }
     : segment
 }
 
-function deriveFacets(segments: Segment[]): SegmentFacets {
-  const labelCounts = new Map<PerformanceLabel, number>()
+function deriveFacets(
+  segments: Segment[],
+  vocabulary: LabelDefinition[],
+): SegmentFacets {
+  const labelCounts = new Map<SegmentLabel, number>()
   const destCounts = new Map<DestinationId, number>()
   const sellerCounts = new Map<string, number>()
 
@@ -296,12 +422,16 @@ function deriveFacets(segments: Segment[]): SegmentFacets {
     (b.count ?? 0) - (a.count ?? 0)
 
   return {
-    // Only labels the dump can actually award; trending_up and
-    // new_gaining_traction need a baseline the API does not expose.
-    performanceLabels: (
-      ['top_performer', 'frequently_reused', 'proven_multi_platform'] as const
-    )
-      .map((value) => ({ value, label: LABEL_TEXT[value], count: labelCounts.get(value) ?? 0 }))
+    // The whole vocabulary in priority order, minus anything no row earned —
+    // an option that can only ever return nothing is noise in the dropdown.
+    // The criteria rides along as the option's hint.
+    labels: vocabulary
+      .map((definition) => ({
+        value: definition.key,
+        label: definition.name,
+        count: labelCounts.get(definition.key) ?? 0,
+        hint: definition.description,
+      }))
       .filter((o) => o.count > 0),
     destinations: [...destCounts]
       .map(([value, count]) => ({ value, label: destinationName(value), count }))
@@ -309,58 +439,93 @@ function deriveFacets(segments: Segment[]): SegmentFacets {
     sellers: [...sellerCounts]
       .map(([value, count]) => ({ value, label: value, count }))
       .sort(byCountDesc),
-    statuses: [
-      { value: 'available', label: 'Available', count: segments.length },
-    ],
+    statuses: [{ value: 'available', label: 'Available', count: segments.length }],
   }
 }
 
-const LABEL_TEXT: Record<PerformanceLabel, string> = {
-  top_performer: 'Top performer',
-  frequently_reused: 'Frequently reused',
-  trending_up: 'Trending up',
-  proven_multi_platform: 'Proven multi-platform',
-  new_gaining_traction: 'New & gaining traction',
+/**
+ * Where `value` sits in `values`, as 0 (lowest) to 1 (highest). Returns 0 for a
+ * single-valued distribution, which is the neutral end of every premium it
+ * feeds.
+ */
+function normalise(value: number, values: number[]) {
+  const lo = Math.min(...values)
+  const hi = Math.max(...values)
+  return hi === lo ? 0 : (value - lo) / (hi - lo)
 }
 
-export function buildCatalog(rows: SegmentFeatureRow[]): LiveCatalog {
-  // `popularity_rank` is ranked over a wider pool than the dump contains
-  // (max rank exceeds the row count), so rank the rows we actually have.
-  const ordered = [...rows].sort((a, b) => a.popularity_rank - b.popularity_rank)
+export function buildCatalog(
+  rows: SegmentFeatureRow[],
+  vocabularyRows: SegmentLabelRow[],
+): LiveCatalog {
+  const vocabulary = vocabularyRows
+    .map(mapLabelDefinition)
+    .sort((a, b) => a.priority - b.priority)
+  const priorityOf = new Map(vocabulary.map((d) => [d.key, d.priority]))
+
+  // `reach_rank` and `distribution_rank` are ranked over the API's whole
+  // catalogue (ranks run into the tens of thousands), not over the rows on
+  // hand — so the score has to re-rank what we actually have. Reach and
+  // distribution weigh equally: a segment is a "best seller" for being both big
+  // and widely bought, and neither alone.
+  const popularity = (r: SegmentFeatureRow) => r.reach_rank + r.distribution_rank
+  const ordered = [...rows].sort((a, b) => popularity(a) - popularity(b))
   const n = ordered.length
 
-  const topPerformerCut = Math.ceil(n * TOP_PERFORMER_PERCENTILE)
-  const reuseThreshold = percentileThreshold(
-    ordered.map((r) => r.buyers_with_usage),
-    1 - FREQUENTLY_REUSED_PERCENTILE,
-  )
+  const cookieReaches = ordered.map((r) => r.cookie_reach)
+  const buyerCounts = ordered.map((r) => r.active_buyers)
+  const impressions = ordered.map((r) => r.impressions_90d)
+
+  // The cut-offs the fixture awarded `best_seller` and `top_impressions` from,
+  // recomputed here so a reason can quote the number the segment had to beat.
+  // Same rows, same percentile function, so they agree by construction.
+  const thresholds: LabelThresholds = {
+    bestSellerMinBuyers: percentileThreshold(buyerCounts, 1 - TOP_DECILE),
+    topImpressionsMin: percentileThreshold(impressions, 1 - TOP_DECILE),
+    medianImpressions: percentileThreshold(impressions, 0.5),
+  }
 
   const byId = new Map<string, { segment: Segment; row: SegmentFeatureRow }>()
   const segments = ordered.map((row, i) => {
     // 100 for the most popular row, 1 for the least, so the score bar and the
     // high/mid/low tone thresholds spread across the whole catalogue.
-    const score = n <= 1 ? 100 : Math.max(1, Math.round(100 - (99 * i) / (n - 1)))
+    const marketplaceScore =
+      n <= 1 ? 100 : Math.max(1, Math.round(100 - (99 * i) / (n - 1)))
 
-    const labels: PerformanceLabel[] = []
-    if (i < topPerformerCut) labels.push('top_performer')
-    if (row.buyers_with_usage >= reuseThreshold) labels.push('frequently_reused')
-    if (row.platforms_with_usage >= MULTI_PLATFORM_MIN) labels.push('proven_multi_platform')
+    // Awarded on the row rather than recomputed here: `label_keys` is what the
+    // catalogue published, and re-deriving it would let the chips disagree with
+    // the fixture's own cut-offs. A key the vocabulary does not define is
+    // dropped — it has no wording to draw and no criteria to explain.
+    const labels = row.label_keys
+      .filter((key): key is SegmentLabel => priorityOf.has(key as SegmentLabel))
+      .sort((a, b) => priorityOf.get(a)! - priorityOf.get(b)!)
 
-    const segment = mapRow(row, score, labels)
+    const labelReasons: Partial<Record<SegmentLabel, string>> = {}
+    for (const label of labels) labelReasons[label] = explainLabel(label, row, thresholds)
+
+    const segment = mapRow(row, {
+      marketplaceScore,
+      labels,
+      labelReasons,
+      scarcity: 1 - normalise(row.cookie_reach, cookieReaches),
+      demand: normalise(row.active_buyers, buyerCounts),
+    })
     byId.set(segment.id, { segment, row })
     return segment
   })
 
-  const first = ordered[0]
+  const reachDates = rows
+    .map((r) => isoDate(r.cookie_reach_updated_at))
+    .filter((d): d is string => Boolean(d))
+    .sort()
+
   return {
     segments,
     byId,
-    facets: deriveFacets(segments),
-    thresholds: { reuseMinBuyers: reuseThreshold },
-    window: {
-      start: first?.usage_start_date ?? '',
-      end: first?.usage_end_date ?? '',
-    },
+    facets: deriveFacets(segments, vocabulary),
+    thresholds,
+    vocabulary,
+    reachAsOf: reachDates.at(-1) ?? '',
   }
 }
 
@@ -372,54 +537,115 @@ function percentileThreshold(values: number[], q: number): number {
   return sorted[idx]
 }
 
-/* ---------- Segment detail ---------- */
+/* ---------- Why a label was awarded ---------- */
 
-function daysBetween(start: string, end: string) {
-  const ms = Date.parse(`${end}T00:00:00`) - Date.parse(`${start}T00:00:00`)
-  return Number.isFinite(ms) ? Math.max(1, Math.round(ms / 86_400_000) + 1) : 0
+const num = (n: number) => n.toLocaleString('en-US')
+const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many)
+
+/** Whole days between two ISO dates, `to` minus `from`. */
+function daysBetween(from: string, to: string) {
+  const ms = Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)
+  return Number.isNaN(ms) ? 0 : Math.round(ms / 86_400_000)
 }
 
+/**
+ * Why *this* segment earned *this* label, in the segment's own numbers.
+ *
+ * The vocabulary's `description` states the criteria — "in the top 10% by
+ * active buyers". This is the other half: what the segment actually scored
+ * against that cut-off. A buyer looking at a chip wants "10 buyers have it
+ * enabled, and the top decile starts at 10", not the rule restated.
+ *
+ * Markdown bold is used the same way the rest of the drawer copy uses it; the
+ * renderers here strip or bold it.
+ */
+export function explainLabel(
+  label: SegmentLabel,
+  row: SegmentFeatureRow,
+  t: LabelThresholds,
+): string {
+  const buyers = row.active_buyers
+  const platforms = row.active_platforms
+  const impressions = row.impressions_90d
+  const age = daysBetween(row.added_at, CATALOG_AS_OF)
+
+  switch (label) {
+    case 'top_performance':
+      return `Among the catalogue's **most-reached** segments — reach rank **${num(row.reach_rank)}**, on **${num(row.cookie_reach)}** cookies.`
+
+    case 'best_seller':
+      return `**${num(buyers)}** ${plural(buyers, 'buyer')} ${plural(buyers, 'has', 'have')} this segment enabled — the catalogue's **top 10%** starts at ${num(t.bestSellerMinBuyers)}.`
+
+    case 'top_impressions':
+      return `**${num(impressions)}** impressions delivered in the last 90 days — the catalogue's **top 10%** starts at ${num(t.topImpressionsMin)}.`
+
+    case 'active_platforms':
+      return `Distributed to **${num(platforms)} ${plural(platforms, 'platform')}** — ${row.active_platform_names.slice(0, 3).join(', ')}${platforms > 3 ? ` and ${num(platforms - 3)} more` : ''} — at or above the **${MULTI_PLATFORM_MIN} platform** threshold.`
+
+    case 'new_addition_trending':
+      return `Added **${num(age)} days ago** and already delivering **${num(impressions)}** impressions — above the catalogue median of ${num(t.medianImpressions)} in its first 90 days.`
+
+    case 'newly_added':
+      return `Added to the marketplace **${num(age)} days ago**, inside the **${NEW_WINDOW_DAYS}-day** window. It has delivered ${num(impressions)} impressions so far.`
+
+    case 'dormant':
+      return row.impressions_prior_90d
+        ? `**No impressions** in the last 90 days, down from **${num(row.impressions_prior_90d)}** in the 90 before — still distributed to ${num(platforms)} ${plural(platforms, 'platform')}.`
+        : `**No impressions** in the last 90 days, despite being distributed to ${num(platforms)} ${plural(platforms, 'platform')}.`
+  }
+}
+
+/* ---------- Segment detail ---------- */
+
+/**
+ * The full breakdown: every label in the vocabulary, whether this segment
+ * earned it, and why — or, when it did not, how far short it fell.
+ *
+ * Showing the misses matters as much as showing the hits. "Not a best seller,
+ * 6 buyers against a cut-off of 10" tells a buyer where the segment sits;
+ * omitting the row tells them nothing.
+ */
 function earnedLabels(
   segment: Segment,
   row: SegmentFeatureRow,
-  reuseThreshold: number,
+  catalog: LiveCatalog,
 ): EarnedLabelExplanation[] {
-  const has = (l: PerformanceLabel) => segment.labels.includes(l)
-  return [
-    {
-      label: 'top_performer',
-      earned: has('top_performer'),
-      explanation: has('top_performer')
-        ? `In the **top 5%** of the catalogue by popularity (rank **${row.popularity_rank}**), which pools delivered impressions, revenue and buyer breadth.`
-        : `Not earned: popularity rank **${row.popularity_rank}** is outside the **top 5%** of the catalogue.`,
-    },
-    {
-      label: 'frequently_reused',
-      earned: has('frequently_reused'),
-      explanation: has('frequently_reused')
-        ? `**${row.buyers_with_usage}** distinct buyers delivered impressions in the window — the **top 10%** of the catalogue starts at ${reuseThreshold}.`
-        : `Not earned: **${row.buyers_with_usage}** buyers delivered impressions, below the **top 10%** cut-off of ${reuseThreshold}.`,
-    },
-    {
-      label: 'proven_multi_platform',
-      earned: has('proven_multi_platform'),
-      explanation: has('proven_multi_platform')
-        ? `Delivered impressions on **${row.platforms_with_usage} platforms**, at or above the **${MULTI_PLATFORM_MIN} platform** threshold.`
-        : `Not earned: delivered on **${row.platforms_with_usage} platform${row.platforms_with_usage === 1 ? '' : 's'}**, below the **${MULTI_PLATFORM_MIN} platform** threshold.`,
-    },
-    {
-      label: 'trending_up',
-      earned: false,
-      explanation:
-        'Not available: the catalog reports a single usage window, with no prior-period baseline to measure growth against.',
-    },
-    {
-      label: 'new_gaining_traction',
-      earned: false,
-      explanation:
-        'Not available: the catalog does not report when a segment was added to the marketplace.',
-    },
-  ]
+  const t = catalog.thresholds
+  const buyers = row.active_buyers
+  const platforms = row.active_platforms
+  const impressions = row.impressions_90d
+  const age = daysBetween(row.added_at, CATALOG_AS_OF)
+
+  const missed: Record<SegmentLabel, string> = {
+    top_performance: `Not earned: reach rank **${num(row.reach_rank)}** is outside the catalogue's top tier by cookie reach.`,
+    best_seller: `Not earned: **${num(buyers)}** ${plural(buyers, 'buyer')} ${plural(buyers, 'has', 'have')} it enabled, below the **top 10%** cut-off of ${num(t.bestSellerMinBuyers)}.`,
+    top_impressions: `Not earned: **${num(impressions)}** impressions in the last 90 days, below the **top 10%** cut-off of ${num(t.topImpressionsMin)}.`,
+    active_platforms: `Not earned: distributed to **${num(platforms)} ${plural(platforms, 'platform')}**, below the **${MULTI_PLATFORM_MIN} platform** threshold.`,
+    new_addition_trending:
+      age > NEW_WINDOW_DAYS
+        ? `Not earned: added **${num(age)} days ago**, outside the **${NEW_WINDOW_DAYS}-day** new window.`
+        : `Not earned: added ${num(age)} days ago, but **${num(impressions)}** impressions is below the catalogue median of ${num(t.medianImpressions)}.`,
+    // Inside the window but not carrying this label means the segment earned
+    // the trending variant instead — the two are mutually exclusive, so
+    // "outside the window" would be plainly wrong here.
+    newly_added:
+      age <= NEW_WINDOW_DAYS
+        ? `Not earned: added ${num(age)} days ago, but it delivers above the catalogue median, so it carries **New addition and Trending** instead.`
+        : `Not earned: added **${num(age)} days ago**, outside the **${NEW_WINDOW_DAYS}-day** window.`,
+    dormant: `Not earned, which is the good outcome here: **${num(impressions)}** impressions delivered in the last 90 days.`,
+  }
+
+  return catalog.vocabulary.map((definition) => {
+    const earned = segment.labels.includes(definition.key)
+    return {
+      label: definition.key,
+      earned,
+      explanation: earned
+        ? (segment.labelReasons[definition.key] ??
+          explainLabel(definition.key, row, t))
+        : missed[definition.key],
+    }
+  })
 }
 
 export function buildPerformance(
@@ -427,40 +653,36 @@ export function buildPerformance(
   row: SegmentFeatureRow,
   catalog: LiveCatalog,
 ): SegmentPerformance {
-  const windowDays = daysBetween(row.usage_start_date, row.usage_end_date)
-  const weeks = Math.max(1, Math.round(windowDays / 7))
   // The score *is* the catalogue percentile: 100 for the most popular row.
   const topPct = Math.max(1, 101 - segment.marketplaceScore)
+  const measuredOn = isoDate(row.cookie_reach_updated_at) ?? catalog.reachAsOf
 
   return {
     segmentId: segment.id,
     marketplaceScore: segment.marketplaceScore,
-    scorePercentileNote: `Top ${topPct}% of the catalogue · popularity rank ${row.popularity_rank}`,
-    advertisersUsing90d: String(row.buyers_with_usage),
-    destinationCount: row.platforms_with_usage,
-    // Every catalog row delivered impressions somewhere in the window, and the
-    // dump carries no week-by-week breakdown to find gaps in.
-    weeksActive: weeks,
-    weeksInWindow: weeks,
-    // No time series in the payload; PerformanceTab renders an explicit
-    // "not reported" state for an empty series.
+    scorePercentileNote: `Top ${topPct}% of the catalogue · reach rank ${row.reach_rank.toLocaleString('en-US')} · distribution rank ${row.distribution_rank.toLocaleString('en-US')}`,
+    advertisersUsing90d: String(row.active_buyers),
+    destinationCount: row.active_platforms,
+    // The feed is a point-in-time snapshot of active distribution, not a time
+    // series: there is no "weeks active" to count, no gaps to find, and nothing
+    // to plot. Both views fall back to what the snapshot does report.
     usageIndex: [],
     destinations: segment.destinations,
-    earnedLabels: earnedLabels(segment, row, catalog.thresholds.reuseMinBuyers),
+    earnedLabels: earnedLabels(segment, row, catalog),
     evidence: {
-      // Confidence in the attribution comes from how many independent buyers
-      // and platforms corroborate the usage.
+      // Confidence in the footprint comes from how many independent buyers and
+      // platforms corroborate it.
       attributionConfidence:
-        row.buyers_with_usage >= 5 && row.platforms_with_usage >= MULTI_PLATFORM_MIN
+        row.active_buyers >= 5 && row.active_platforms >= MULTI_PLATFORM_MIN
           ? 'High'
-          : row.buyers_with_usage >= 2
+          : row.active_buyers >= 2
             ? 'Medium'
             : 'Low',
       usageDirectlyAttributedPct: segment.advertiserDirectPctOfMedia,
       sharedAdGroupAllocationPct: 100 - segment.advertiserDirectPctOfMedia,
-      labelsLastRecomputed: row.usage_end_date,
-      reportingWindowStart: row.usage_start_date,
-      reportingWindowEnd: row.usage_end_date,
+      labelsLastRecomputed: measuredOn,
+      reportingWindowStart: measuredOn,
+      reportingWindowEnd: measuredOn,
     },
   }
 }

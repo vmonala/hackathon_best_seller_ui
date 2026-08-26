@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
 import * as Popover from '@radix-ui/react-popover'
-import type { Segment, SegmentTag, SortKey } from '@/api/types'
+import type { Segment, SortKey } from '@/api/types'
 import { Checkbox } from './Checkbox'
 import { LabelBadge, PlatformBadge } from './Badge'
-import { TagChip } from './TagChip'
 import { DestinationDots } from './DestinationDots'
 import { formatDate, formatReach } from '@/lib/labels'
 import {
@@ -11,7 +10,6 @@ import {
   METRIC_LABELS,
   REAL_REACH_METRICS,
   SHOW_CATALOG_METRICS,
-  SHOW_DATE_ADDED,
 } from '@/lib/metricLabels'
 import { cn } from '@/lib/cn'
 
@@ -28,21 +26,22 @@ interface MetricColumn {
   header: string
   width: number
   /**
-   * Whether the current API mode reports this field at all. A column without
-   * data stays in the picker — so nothing is silently missing — but starts
-   * hidden rather than filling the table with dashes.
+   * Whether the catalogue reports this field at all. A column without data
+   * stays in the picker — so nothing is silently missing — but starts hidden
+   * rather than filling the table with dashes.
    */
   hasData: boolean
   /** Checked by default in the picker. */
   defaultVisible: boolean
   /**
-   * Catalogue attribute rather than delivered usage. In live mode these carry a
-   * derived stand-in, so they are tagged as estimates wherever they appear.
+   * A commercial attribute — rate card, CPC, media share, created date — that
+   * the catalogue does not report. These carry a derived stand-in, so they are
+   * tagged as estimates wherever they appear.
    */
   catalogAttribute?: boolean
   /**
-   * Device-level reach or input records — derived today, but measured once the
-   * tags API supplies them, which flips `catalogAttribute` off at render time.
+   * Cookie, device-level or input-record reach. Measured off the catalogue row,
+   * so these are never counted as estimates in the footnote.
    */
   reachMetric?: boolean
   sortKey?: SortKey
@@ -87,25 +86,30 @@ const METRIC_COLUMNS: MetricColumn[] = [
     id: 'pctMedia',
     header: METRIC_LABELS.pctMedia,
     width: 168,
-    hasData: true,
-    defaultVisible: true,
+    hasData: SHOW_CATALOG_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS,
+    catalogAttribute: true,
     cell: (s) => pct(s.advertiserDirectPctOfMedia),
   },
   {
     id: 'cpc',
     header: METRIC_LABELS.cpc,
     width: 92,
-    hasData: true,
-    defaultVisible: true,
+    hasData: SHOW_CATALOG_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS,
+    catalogAttribute: true,
     sortKey: 'cpc',
     cell: (s) => usd(s.cpc),
   },
+  // The four reach columns are measured values off the catalogue row, so they
+  // are always available and never footnoted as estimates.
   {
     id: 'cookieReach',
     header: METRIC_LABELS.reach,
     width: 104,
     hasData: true,
     defaultVisible: true,
+    reachMetric: true,
     sortKey: 'cookie_reach',
     cell: (s) => reach(s.cookieReach),
   },
@@ -113,9 +117,8 @@ const METRIC_COLUMNS: MetricColumn[] = [
     id: 'iosReach',
     header: 'iOS Reach',
     width: 100,
-    hasData: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
-    defaultVisible: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
-    catalogAttribute: true,
+    hasData: true,
+    defaultVisible: true,
     reachMetric: true,
     cell: (s) => reach(s.iosReach),
   },
@@ -123,9 +126,8 @@ const METRIC_COLUMNS: MetricColumn[] = [
     id: 'androidReach',
     header: 'Android Reach',
     width: 112,
-    hasData: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
-    defaultVisible: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
-    catalogAttribute: true,
+    hasData: true,
+    defaultVisible: true,
     reachMetric: true,
     cell: (s) => reach(s.androidReach),
   },
@@ -133,19 +135,38 @@ const METRIC_COLUMNS: MetricColumn[] = [
     id: 'inputRecords',
     header: 'Input Records',
     width: 110,
-    hasData: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
-    defaultVisible: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
-    catalogAttribute: true,
+    hasData: true,
+    defaultVisible: true,
     reachMetric: true,
     cell: (s) => reach(s.inputRecords),
+  },
+  // Impressions and Date Added are on the row, so they are neither hidden nor
+  // footnoted — they are what the impressions and lifecycle labels read from,
+  // and a chip claiming "top 10% by impressions" needs the number in reach of
+  // the reader.
+  {
+    id: 'impressions90d',
+    header: METRIC_LABELS.impressions,
+    width: 122,
+    hasData: true,
+    defaultVisible: true,
+    sortKey: 'impressions',
+    cell: (s) => (s.impressions90d == null ? dash : formatReach(s.impressions90d)),
+  },
+  {
+    id: 'impressionsGrowth',
+    header: 'Impressions Δ',
+    width: 108,
+    hasData: true,
+    defaultVisible: false,
+    cell: (s) => <Growth pct={s.impressionsGrowthPct} />,
   },
   {
     id: 'dateAdded',
     header: 'Date Added',
     width: 118,
-    hasData: SHOW_DATE_ADDED,
-    defaultVisible: SHOW_DATE_ADDED,
-    catalogAttribute: true,
+    hasData: true,
+    defaultVisible: true,
     sortKey: 'date_added',
     cell: (s) => formatDate(s.dateAdded),
   },
@@ -163,10 +184,9 @@ const METRIC_COLUMNS: MetricColumn[] = [
 ]
 
 /**
- * Every column is offered in the picker. The live usage feed carries no rate
- * card, no device-level reach, no input record count and no created date, so
- * those columns render "-" there; they are listed as "no data" and start
- * hidden instead of being dropped, which otherwise reads as a missing feature.
+ * Every column is offered in the picker, including any the catalogue cannot
+ * fill. Those are listed as "no data" and start hidden rather than being
+ * dropped, which otherwise reads as a missing feature.
  */
 const AVAILABLE_COLUMNS = METRIC_COLUMNS
 
@@ -192,11 +212,6 @@ interface SegmentsTableProps {
   activeSegmentId?: string | null
   /** "View full details" in the row menu. */
   onViewFullDetails?: (id: string) => void
-  /**
-   * Segment Intelligence tags by segment id. Loads after the rows do, from a
-   * separate backend, so it is optional — the table renders fine without it.
-   */
-  tagsById?: Map<string, SegmentTag[]>
 }
 
 export function SegmentsTable({
@@ -212,7 +227,6 @@ export function SegmentsTable({
   onOpenSegment,
   activeSegmentId,
   onViewFullDetails,
-  tagsById,
 }: SegmentsTableProps) {
   const [visible, setVisible] = useState<Set<string>>(
     () => new Set(AVAILABLE_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id)),
@@ -224,20 +238,13 @@ export function SegmentsTable({
     [visible],
   )
 
-  // Whether the reach figures on screen are measured rather than derived. The
-  // flag only says the app asked; the rows say whether the API answered, and
-  // the header and the footnote have to agree with the numbers underneath them.
-  const reachMeasured = REAL_REACH_METRICS && rows.some((r) => r.reachMeasured)
-
   // Named in the footnote so it is clear which numbers on screen are derived.
+  // Reach columns are measured and never qualify, whatever else is on show.
   const estimatedShown = ESTIMATED_CATALOG_METRICS
     ? columns
-        .filter((c) => c.catalogAttribute && !(reachMeasured && c.reachMetric))
+        .filter((c) => c.catalogAttribute && !(REAL_REACH_METRICS && c.reachMetric))
         .map((c) => c.header)
     : []
-
-  const headerFor = (c: MetricColumn) =>
-    reachMeasured && c.id === 'cookieReach' ? METRIC_LABELS.reachMeasured : c.header
 
   const nameWidth = compact ? NAME_WIDTH_COMPACT : NAME_WIDTH
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.id))
@@ -250,7 +257,7 @@ export function SegmentsTable({
       <div className="mt-10 rounded-lg border border-dashed border-line py-14 text-center">
         <p className="text-sm font-semibold text-ink2">No segments match these filters</p>
         <p className="mt-1 text-[13px] text-muted">
-          Try removing a performance label or destination.
+          Try removing a label or destination.
         </p>
       </div>
     )
@@ -260,11 +267,7 @@ export function SegmentsTable({
     <div className="relative mt-2.5">
       {/* The gear floats above the scroller so it stays reachable at any
           horizontal scroll position, like the mockup. */}
-      <ColumnPicker
-        visible={visible}
-        onChange={setVisible}
-        reachMeasured={reachMeasured}
-      />
+      <ColumnPicker visible={visible} onChange={setVisible} />
 
       <div className="overflow-x-auto">
         {/* border-separate, not border-collapse: a collapsed table drops the
@@ -324,7 +327,7 @@ export function SegmentsTable({
                   direction={direction}
                   onSort={onSort}
                 >
-                  {headerFor(c)}
+                  {c.header}
                 </Th>
               ))}
               {/* Sits under the floating gear. */}
@@ -368,7 +371,7 @@ export function SegmentsTable({
                         {s.name}
                       </span>
                     </div>
-                    <RowLabels segment={s} tags={tagsById?.get(s.id)} />
+                    <RowLabels segment={s} />
                   </Td>
                   {columns.map((c) => (
                     <Td key={c.id} compact={compact} active={isActive}>
@@ -397,7 +400,7 @@ export function SegmentsTable({
         <p className="mt-2 text-[11.5px] leading-[1.5] text-muted2">
           {estimatedShown.join(', ')}{' '}
           {estimatedShown.length === 1 ? 'is an estimate' : 'are estimates'} derived
-          from delivered usage — the catalog API does not report{' '}
+          from reach and distribution — the catalogue does not report{' '}
           {estimatedShown.length === 1 ? 'it' : 'them'}.
         </p>
       )}
@@ -406,42 +409,59 @@ export function SegmentsTable({
 }
 
 /**
- * Performance labels and Segment Intelligence tags under a segment name.
+ * The labels under a segment name.
  *
- * Both families are drawn short and capped at two each: full-length badges wrap
- * onto a line each in the pinned column and multiply the height of every row.
- * Segments average about five tags, so most rows overflow. Everything over the
- * caps rolls into a single count — one "+N" per row, never two — and the detail
- * panel lists them all.
+ * One vocabulary now, drawn short and capped: full-length badges wrap onto a
+ * line each in the pinned column and multiply the height of every row.
+ * `labels` is already in priority order, so the cap keeps the strongest.
+ * Everything over it rolls into a single count, and the detail panel lists them
+ * all with the reason each was awarded.
+ *
+ * `active_platforms` is drawn last and as `PlatformBadge`, which names the
+ * segment's own platform count rather than the 4-platform threshold — it is the
+ * more useful number, and it does not count against the cap because it is the
+ * one badge on nearly every row.
  */
-const MAX_ROW_BADGES = 2
-const MAX_ROW_TAGS = 2
+const MAX_ROW_BADGES = 3
 
-function RowLabels({ segment, tags }: { segment: Segment; tags?: SegmentTag[] }) {
-  const named = segment.labels.filter((l) => l !== 'proven_multi_platform')
-  const multi = segment.labels.length !== named.length
-  const shownLabels = named.slice(0, multi ? MAX_ROW_BADGES - 1 : MAX_ROW_BADGES)
+function RowLabels({ segment }: { segment: Segment }) {
+  const multi = segment.labels.includes('active_platforms')
+  const named = segment.labels.filter((l) => l !== 'active_platforms')
+  const shown = named.slice(0, MAX_ROW_BADGES)
+  const hidden = named.length - shown.length
 
-  // Already sorted by priority in `src/api/tags.ts`, so this is the strongest N.
-  const shownTags = tags?.slice(0, MAX_ROW_TAGS) ?? []
-  const hidden =
-    named.length - shownLabels.length + ((tags?.length ?? 0) - shownTags.length)
-
-  if (segment.labels.length === 0 && shownTags.length === 0) return null
+  if (segment.labels.length === 0) return null
 
   return (
     <div className="mt-[7px] flex flex-wrap items-center gap-1.5">
-      {shownLabels.map((l) => (
-        <LabelBadge key={l} label={l} short />
+      {shown.map((l) => (
+        <LabelBadge key={l} label={l} short reason={segment.labelReasons[l]} />
       ))}
-      {multi && <PlatformBadge count={segment.platformCount} />}
-      {shownTags.map((t) => (
-        <TagChip key={t.key} tag={t} />
-      ))}
+      {multi && (
+        <PlatformBadge
+          count={segment.platformCount}
+          reason={segment.labelReasons.active_platforms}
+        />
+      )}
       {hidden > 0 && (
         <span className="text-[11px] font-semibold text-muted2">+{hidden}</span>
       )}
     </div>
+  )
+}
+
+/**
+ * Period-on-period change in impressions. Absent for a segment newer than the
+ * prior window, which has no baseline to compare against — that reads as "-",
+ * not as 0%.
+ */
+function Growth({ pct }: { pct?: number }) {
+  if (pct == null) return dash
+  if (pct === 0) return <span className="text-muted">0%</span>
+  return (
+    <span className={pct > 0 ? 'font-semibold text-green-deep' : 'text-[#B3261E]'}>
+      {pct > 0 ? '▲' : '▼'} {Math.abs(pct)}%
+    </span>
   )
 }
 
@@ -530,12 +550,9 @@ function Td({
 function ColumnPicker({
   visible,
   onChange,
-  reachMeasured,
 }: {
   visible: Set<string>
   onChange: (next: Set<string>) => void
-  /** Reach is measured, so those columns are no longer tagged "estimated". */
-  reachMeasured: boolean
 }) {
   const toggle = (id: string) => {
     const next = new Set(visible)
@@ -582,7 +599,7 @@ function ColumnPicker({
                   <span className="text-[11px] text-muted2">no data</span>
                 ) : c.catalogAttribute &&
                   ESTIMATED_CATALOG_METRICS &&
-                  !(reachMeasured && c.reachMetric) ? (
+                  !(REAL_REACH_METRICS && c.reachMetric) ? (
                   <span className="text-[11px] text-muted2">estimated</span>
                 ) : null}
               </button>

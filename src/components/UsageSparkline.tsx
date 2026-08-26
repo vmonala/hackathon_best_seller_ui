@@ -4,8 +4,8 @@ import { cn } from '@/lib/cn'
 export function UsageSparkline({ points }: { points: UsagePoint[] }) {
   const peak = Math.max(...points.map((p) => p.index), 1)
 
-  // The live catalog reports one aggregate usage window, with no month-by-month
-  // breakdown to plot.
+  // The marketplace catalogue is a point-in-time distribution snapshot, with no
+  // month-by-month series to plot.
   if (points.length === 0) {
     return (
       <div className="mt-1.5 flex h-[72px] items-center justify-center rounded-[6px] border border-dashed border-line text-[12px] text-muted2">

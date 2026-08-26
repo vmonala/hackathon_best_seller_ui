@@ -38,19 +38,15 @@
     @apply border border-line bg-line2 font-semibold text-[#3C4043];
   }
 
-  /* Segment Intelligence tags. Toned by category so they read as their own
-     family, distinct from the performance labels above. */
-  .bdg-tag {
-    @apply font-semibold;
+  /* Lifecycle and attention labels, which the mockup's five tones did not
+     cover: "Newly Added" reads as informational, "Dormant" as a quiet
+     caution rather than an error — a dormant segment is a fact about
+     delivery, not a fault. */
+  .bdg-fresh {
+    @apply bg-[#E7F0FF] text-[#1B4F9C];
   }
-  .bdg-tag-platform {
-    @apply bg-blue-soft text-blue-ink;
-  }
-  .bdg-tag-reach {
-    @apply bg-teal-soft text-teal-ink;
-  }
-  .bdg-tag-distribution {
-    @apply bg-violet-soft text-violet-ink;
+  .bdg-dormant {
+    @apply border border-[#E1E4E8] bg-[#F1F3F5] text-[#5F6368];
   }
 
   /* Seller performance labels. */

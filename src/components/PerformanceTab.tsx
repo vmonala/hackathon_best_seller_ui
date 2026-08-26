@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
-import type { SegmentDetail } from '@/api/types'
+import type { EvidenceQuality, SegmentDetail } from '@/api/types'
 import { UsageSparkline } from './UsageSparkline'
-import { destinationMeta, USAGE_TEXT, formatDate } from '@/lib/labels'
+import { destinationMeta, USAGE_TEXT, formatDate, formatReach } from '@/lib/labels'
 import { DestinationChip } from './DestinationDots'
-import { TagExplanations } from './TagChip'
+import { LabelExplanations } from './LabelChip'
 
 export function PerformanceTab({ segment }: { segment: SegmentDetail }) {
   const p = segment.performance
@@ -18,33 +18,52 @@ export function PerformanceTab({ segment }: { segment: SegmentDetail }) {
             sub={p.scorePercentileNote}
           />
           <Kpi
-            label="Advertisers using (90d)"
+            label="Buyers distributing"
             value={p.advertisersUsing90d}
-            sub={`Across ${p.destinationCount} destinations`}
+            sub={`Across ${p.destinationCount} platforms`}
           />
-          <Kpi
-            label="Weeks active"
-            value={
-              <>
-                {p.weeksActive}
-                <span className="text-[15px] text-muted2">/{p.weeksInWindow}</span>
-              </>
-            }
-            sub={
-              p.weeksActive === p.weeksInWindow
-                ? 'Continuous use, no gaps'
-                : `${p.weeksInWindow - p.weeksActive} weeks inactive`
-            }
-          />
+          {/* Continuity needs a week-by-week series. The marketplace catalogue
+              is a snapshot, so the third KPI shows measured reach instead. */}
+          {p.weeksActive == null || p.weeksInWindow == null ? (
+            <Kpi
+              label="Cookie reach"
+              value={formatReach(segment.cookieReach)}
+              sub={
+                segment.reachAsOf
+                  ? `Measured ${formatDate(segment.reachAsOf)}`
+                  : 'Measured Connect reach'
+              }
+            />
+          ) : (
+            <Kpi
+              label="Weeks active"
+              value={
+                <>
+                  {p.weeksActive}
+                  <span className="text-[15px] text-muted2">/{p.weeksInWindow}</span>
+                </>
+              }
+              sub={
+                p.weeksActive === p.weeksInWindow
+                  ? 'Continuous use, no gaps'
+                  : `${p.weeksInWindow - p.weeksActive} weeks inactive`
+              }
+            />
+          )}
         </div>
 
-        <h5 className="sec-label mt-[22px]">Usage index — last 6 months</h5>
-        <UsageSparkline points={p.usageIndex} />
-        <p className="mt-2 text-[11.5px] text-[#9AA0A6]">
-          Indexed to the segment&apos;s own 6-month peak. Aggregated across all buyers.
-        </p>
+        {p.usageIndex.length > 0 && (
+          <>
+            <h5 className="sec-label mt-[22px]">Usage index — last 6 months</h5>
+            <UsageSparkline points={p.usageIndex} />
+            <p className="mt-2 text-[11.5px] text-[#9AA0A6]">
+              Indexed to the segment&apos;s own 6-month peak. Aggregated across all
+              buyers.
+            </p>
+          </>
+        )}
 
-        <h5 className="sec-label mt-[22px]">Where it delivers</h5>
+        <h5 className="sec-label mt-[22px]">Where it&apos;s distributed</h5>
         {p.destinations.map((d) => {
           const meta = destinationMeta(d.destination)
           return (
@@ -67,29 +86,34 @@ export function PerformanceTab({ segment }: { segment: SegmentDetail }) {
 
         <div className="mt-4 rounded-[9px] border border-line bg-sand px-[15px] py-3.5 text-[12px] leading-[1.6] text-muted">
           <b className="text-ink2">What these labels are.</b> Labels are computed from
-          aggregated, delivered marketplace usage — impressions and campaign activity
-          that LiveRamp already collects for billing — pooled across at least five
-          buyers before anything is shown. Individual advertiser names, campaign details
-          and spend figures are never exposed to other buyers or sellers.
+          the segment&apos;s marketplace record — how many buyers and platforms have it
+          enabled, how far its measured Connect reach extends, how many impressions it
+          delivered in the last 90 days, and when it was added — pooled across at least
+          five buyers before anything is shown. Individual advertiser names, campaign
+          details and spend figures are never exposed to other buyers or sellers.
           <br />
-          <b className="text-ink2">What they are not.</b> They describe marketplace
-          demand, not campaign outcomes. A segment without labels is not a lower-quality
-          segment — it may simply be new, niche, or running on destinations where usage
-          is not yet reported automatically.
+          <b className="text-ink2">What they are not.</b> They describe distribution,
+          reach and delivered volume, not campaign outcomes: no label claims a segment
+          performed well for an advertiser. A segment without labels is not a
+          lower-quality segment — it may simply be niche, or distributed to fewer
+          platforms.
         </div>
       </div>
 
       <div className="min-w-0 flex-[0.85]">
-        <h5 className="sec-label mt-0">How it earned its tags</h5>
-        <TagExplanations tags={segment.tags} />
+        <h5 className="sec-label mt-0">How it earned its labels</h5>
+        <LabelExplanations
+          earned={p.earnedLabels}
+          platformCount={segment.platformCount}
+        />
 
         <h5 className="sec-label mt-[22px]">Evidence quality</h5>
         <Row label="Attribution confidence" value={<b>{p.evidence.attributionConfidence}</b>} />
         <Row
-          label="Usage directly attributed"
+          label="Advertiser direct share"
           value={
             <>
-              <b>{p.evidence.usageDirectlyAttributedPct}%</b> of impressions
+              <b>{p.evidence.usageDirectlyAttributedPct}%</b> of media
             </>
           }
         />
@@ -102,14 +126,14 @@ export function PerformanceTab({ segment }: { segment: SegmentDetail }) {
           value={formatDate(p.evidence.labelsLastRecomputed)}
         />
         <Row
-          label="Reporting window"
-          value={`${formatDate(p.evidence.reportingWindowStart)} – ${formatDate(p.evidence.reportingWindowEnd)}`}
+          label={windowLabel(p.evidence)}
+          value={windowValue(p.evidence)}
           last
         />
 
         <p className="mt-3 text-[11.5px] text-[#9AA0A6]">
           Sellers see the same panel for their own segments, plus a private view of
-          segments that are distributed but not delivering.
+          which platforms their distribution has not reached.
         </p>
       </div>
     </div>
@@ -154,4 +178,21 @@ function Row({
       <span>{value}</span>
     </div>
   )
+}
+
+/**
+ * The evidence period. Marketplace segments are a point-in-time snapshot, so
+ * their window collapses to the single date it was measured on; the seller feed
+ * reports a real range.
+ */
+export function windowLabel(e: EvidenceQuality) {
+  return e.reportingWindowStart === e.reportingWindowEnd
+    ? 'Measured on'
+    : 'Reporting window'
+}
+
+export function windowValue(e: EvidenceQuality) {
+  return e.reportingWindowStart === e.reportingWindowEnd
+    ? formatDate(e.reportingWindowEnd)
+    : `${formatDate(e.reportingWindowStart)} – ${formatDate(e.reportingWindowEnd)}`
 }

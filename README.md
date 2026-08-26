@@ -15,7 +15,7 @@ You do **not** need a backend to run it. It ships with bundled fixtures, boots s
 
 A catalogue table answers *what exists*. A buyer is asking *what works*. Those need different data and different filter semantics.
 
-Performance labels are **OR-ed** — ticking *Top performer* and *Trending up* widens the result set, because the facet counts are independent and a buyer ticking two labels means "either is fine". Destinations are **AND-ed** — "proven on Facebook *and* Snapchat" is the actual activation question, and a destination only counts when it is genuinely delivering (`live: true`), not merely distributed.
+Labels are **OR-ed** — ticking *Top performance* and *Best seller* widens the result set, because the facet counts are independent and a buyer ticking two labels means "either is fine". Destinations are **AND-ed** — "proven on Facebook *and* Snapchat" is the actual activation question, and a destination only counts when it is genuinely delivering (`live: true`), not merely distributed.
 
 That asymmetry is the product, not an implementation detail. The backend must mirror it exactly or the counts stop agreeing with the rows.
 
@@ -256,6 +256,7 @@ components/
   SegmentsTable.tsx  TanStack Table; full and compact variants
   DiscoveryPanel.tsx AI Segment Discovery conversation panel
   PerformanceTab.tsx Marketplace performance detail tab
+  LabelChip.tsx      Label chip with its reason on hover + the earned/not breakdown
   UsageSparkline.tsx ScoreBar.tsx DestinationDots.tsx Badge.tsx Checkbox.tsx
 
   seller/
@@ -434,21 +435,27 @@ The API reports **delivered marketplace usage over a single ~30-day window**. It
 | `destinations` | `active_platform_names` ∩ the seven destinations the UI can draw | `live: true` means it **delivered** impressions; distributed-but-idle destinations come through with `live: false` |
 | `status` | Always `available` | Per-user request state lives in another system |
 
-Because three columns carry a different metric than the fixtures do, `src/lib/metricLabels.ts` relabels their headers in live mode — **Effective CPM**, **Impressions Delivered**, **Buyers Delivering** — and hides **Date Added** entirely, so a header never disagrees with the number under it.
+Because three columns carry a different metric than the fixtures do, `src/lib/metricLabels.ts` relabels their headers in live mode — **Effective CPM**, **Impressions Delivered**, **Buyers Delivering** — so a header never disagrees with the number under it.
 
-### Performance labels in live mode
+### The label vocabulary
 
-Earned from catalogue-wide cut-offs, with the thresholds spelled out on the segment's Marketplace performance tab:
+One flat vocabulary — there is no separate "tag" family. Seven labels, awarded from catalogue-wide cut-offs, priority order:
 
-| Label | Rule | Rows (of 14,633) |
+| Label | Earned when | Rows (of 68) |
 |---|---|---|
-| **Top performer** | Top 5% by popularity rank | 732 |
-| **Frequently reused** | `buyers_with_usage` in the top 10% (≥ 6 buyers) | 2,162 |
-| **Proven multi-platform** | Delivered on ≥ 4 platforms | 7,175 |
-| **Trending up** | *Never awarded* — no prior-period baseline in the payload | 0 |
-| **New & gaining traction** | *Never awarded* — no date-added in the payload | 0 |
+| **Top performance** | Among the catalogue's most-reached segments | 17 |
+| **Best seller** | Top 10% by active buyers (≥ 10 buyers) | 8 |
+| **Top 10% by Impressions** | Top 10% by impressions delivered in the last 90 days | 8 |
+| **Activated in N platforms** | Distributed to ≥ 4 platforms; the badge names the segment's own count | 52 |
+| **New addition and Trending** | Added in the last 90 days, already at or above the catalogue's median impressions | 6 |
+| **Newly Added** | Added in the last 90 days | 5 |
+| **Dormant** | Distributed, but no impressions in the last 90 days | 7 |
 
-The two unearnable labels are dropped from the facet dropdown rather than shown at zero, and the detail page says explicitly why they cannot be earned.
+`Newly Added` and `New addition and Trending` are mutually exclusive — a new segment earns one or the other, never both.
+
+**Every label carries its reason.** A chip a buyer cannot interrogate is worse than no chip, so each award ships with a `labelReasons` entry quoting the segment's own figure *and* the cut-off it beat — "10 buyers have this segment enabled — the catalogue's top 10% starts at 10" — shown on hover. The Marketplace performance tab goes further and lists **every** label including the misses, with how far short the segment fell. A label with a count of 0 is dropped from the facet dropdown rather than offered as a dead end.
+
+Definitions live in two places: the wording and criteria in `LABEL_VOCABULARY` (`src/api/mock/catalogRows.ts`), the icon and chip tone in `LABEL_META` (`src/lib/labels.ts`). The per-segment reason is built by `explainLabel` in `src/api/adapters/catalog.ts`.
 
 ### AI discovery
 
@@ -461,7 +468,7 @@ The agent answers in prose and returns its evidence — cited fragments, the SQL
 | What you do | What happens | Where |
 |---|---|---|
 | Type `smart watch` | Debounced 300 ms, matches path and seller, whitespace-insensitive | `FilterBar.tsx` |
-| Tick *Top performer* + *Trending up* | Results **widen** (OR) | `mock/index.ts` |
+| Tick *Top performance* + *Best seller* | Results **widen** (OR) | `mock/index.ts` |
 | Tick *Facebook* + *Snapchat* | Results **narrow** to segments live on both (AND) | `mock/index.ts` |
 | Click a column header | Server-side re-sort; clicking the active column flips direction | `SegmentsTable.tsx` |
 | Copy the URL after filtering | Filters and sort travel with the link; back button works | `useSegmentQueryParams.ts` |
@@ -479,7 +486,7 @@ Consuming the API from a component:
 import { useSegments, useFacets } from '@/api/queries'
 
 const { data: facets } = useFacets()                         // cached 5 min
-const { data } = useSegments({ labels: ['top_performer'], sort: 'cpc' })
+const { data } = useSegments({ labels: ['best_seller'], sort: 'cpc' })
 
 data?.items.map((s) => s.name)
 ```

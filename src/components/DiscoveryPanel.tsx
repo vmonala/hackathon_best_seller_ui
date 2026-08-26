@@ -7,6 +7,13 @@ import { renderBold } from '@/lib/markdown'
 interface DiscoveryPanelProps {
   onClose: () => void
   onAsk: (question: string) => void
+  /**
+   * Clears the answer. The result lives in the caller's mutation state, not
+   * here, so starting over has to go back through it — and because the caller
+   * also narrows the table to the answer's candidates, that narrowing lifts
+   * with it.
+   */
+  onReset: () => void
   isPending: boolean
   result?: AiDiscoveryResponse
   error?: Error | null
@@ -15,12 +22,13 @@ interface DiscoveryPanelProps {
 const SUGGESTIONS = [
   'I need the segments in the retail category for smart watches to activate to facebook and snapchat destination. Give me the most popular segments',
   'Show me the trending smartwatch segments only',
-  'Compare cost per 1,000 impressions across wearables segments',
+  'Compare cross-device reach across wearables segments',
 ]
 
 export function DiscoveryPanel({
   onClose,
   onAsk,
+  onReset,
   isPending,
   result,
   error,
@@ -33,6 +41,16 @@ export function DiscoveryPanel({
     onAsk(q)
     setInput('')
   }
+
+  /** Back to the empty panel: no answer, no error, no half-typed follow-up. */
+  const startOver = () => {
+    setInput('')
+    onReset()
+  }
+
+  // Nothing to clear on a panel that was just opened, and clearing mid-flight
+  // would only be undone when the answer in flight lands.
+  const canReset = !isPending && Boolean(result || error || input)
 
   return (
     <div className="flex w-[620px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white px-[26px] py-[22px]">
@@ -52,7 +70,7 @@ export function DiscoveryPanel({
         <div className="mt-6">
           <p className="text-[14.5px] leading-[1.6] text-ink2">
             Describe the audience you want to reach and the destinations you plan to
-            activate on. Results are ranked by delivered marketplace usage.
+            activate on. Results are ranked by measured reach and distribution breadth.
           </p>
           <div className="mt-4 space-y-2">
             {SUGGESTIONS.map((s) => (
@@ -106,12 +124,15 @@ export function DiscoveryPanel({
               </Link>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {rec.labels
-                  .filter((l) => l !== 'proven_multi_platform')
+                  .filter((l) => l !== 'active_platforms')
                   .map((l) => (
-                    <LabelBadge key={l} label={l} />
+                    <LabelBadge key={l} label={l} reason={rec.labelReasons?.[l]} />
                   ))}
-                {rec.labels.includes('proven_multi_platform') && (
-                  <PlatformBadge count={rec.platformCount} />
+                {rec.labels.includes('active_platforms') && (
+                  <PlatformBadge
+                    count={rec.platformCount}
+                    reason={rec.labelReasons?.active_platforms}
+                  />
                 )}
                 {rec.extraBadge && <TextBadge>{rec.extraBadge}</TextBadge>}
               </div>
@@ -147,11 +168,17 @@ export function DiscoveryPanel({
               }
             }}
             rows={2}
-            placeholder='Ask a follow-up — e.g. "show the trending ones only" or "compare cost per 1,000 impressions"'
+            placeholder='Ask a follow-up — e.g. "only the multi-platform ones" or "compare iOS reach"'
             className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted2"
           />
           <div className="mt-3 flex items-center text-[13px] text-muted2">
-            <button className="hover:text-ink">＋ New Exploration</button>
+            <button
+              onClick={startOver}
+              disabled={!canReset}
+              className="hover:text-ink disabled:cursor-default disabled:opacity-40 disabled:hover:text-muted2"
+            >
+              ＋ New Exploration
+            </button>
             <button
               onClick={() => submit(input)}
               disabled={!input.trim() || isPending}
@@ -221,7 +248,7 @@ function ThinkingState() {
     <div className="mt-5 space-y-3">
       <div className="flex items-center gap-2 text-[13px] text-muted">
         <span className="h-2 w-2 animate-pulse rounded-full bg-indigo" />
-        Ranking segments by delivered marketplace usage…
+        Ranking segments by measured reach and distribution…
       </div>
       {[0, 1, 2].map((i) => (
         <div key={i} className="rounded-[10px] border border-line px-[15px] py-3.5">

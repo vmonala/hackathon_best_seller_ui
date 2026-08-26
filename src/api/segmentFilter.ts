@@ -35,22 +35,13 @@ function matchesBaseFilters(segment: Segment, query: SegmentQuery) {
 }
 
 /**
- * Performance-label, tag and destination narrowing, counted separately for the
- * footer. `tagIds` is the id set the selected tags resolve to, or null when no
- * tag is selected — see `resolveTagFilter` in `./tags`.
+ * Label and destination narrowing, counted separately for the footer.
  */
-function matchesLabelFilters(
-  segment: Segment,
-  query: SegmentQuery,
-  tagIds: ReadonlySet<string> | null,
-) {
+function matchesLabelFilters(segment: Segment, query: SegmentQuery) {
   const { labels = [], destinations = [] } = query
-  // Performance labels are OR-ed: selecting two labels widens the result set,
-  // which is what the independent per-label facet counts imply.
+  // Labels are OR-ed: selecting two labels widens the result set, which is what
+  // the independent per-label facet counts imply.
   if (labels.length && !labels.some((l) => segment.labels.includes(l))) return false
-  // Tags are AND-ed, and the intersection was taken when the sets were
-  // resolved, so membership in the one set is the whole test.
-  if (tagIds && !tagIds.has(segment.id)) return false
   // Destinations are AND-ed: "proven on Facebook AND Snapchat" is the
   // activation question buyers are actually asking.
   if (
@@ -73,6 +64,8 @@ function sortSegments(rows: Segment[], query: SegmentQuery): Segment[] {
         return (a.cpc - b.cpc) * dir
       case 'cookie_reach':
         return (a.cookieReach - b.cookieReach) * dir
+      case 'impressions':
+        return ((a.impressions90d ?? 0) - (b.impressions90d ?? 0)) * dir
       case 'date_added':
         return (Date.parse(a.dateAdded) - Date.parse(b.dateAdded)) * dir
       case 'name':
@@ -87,20 +80,13 @@ function sortSegments(rows: Segment[], query: SegmentQuery): Segment[] {
 /**
  * Full list query against an in-memory catalog. `totalUnfiltered` reports the
  * size of `rows`; callers standing in for a larger catalogue can override it.
- *
- * `tagIds` comes from the Segment Intelligence API rather than from `rows`,
- * which is why it is passed in rather than read off the query.
  */
 export function runSegmentQuery(
   rows: Segment[],
   query: SegmentQuery,
-  tagIds: ReadonlySet<string> | null = null,
 ): Paginated<Segment> {
   const base = rows.filter((s) => matchesBaseFilters(s, query))
-  const matched = sortSegments(
-    base.filter((s) => matchesLabelFilters(s, query, tagIds)),
-    query,
-  )
+  const matched = sortSegments(base.filter((s) => matchesLabelFilters(s, query)), query)
 
   const pageSize = query.pageSize ?? DEFAULT_PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(matched.length / pageSize))
