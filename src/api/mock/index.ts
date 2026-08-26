@@ -25,6 +25,7 @@ import {
   mockSellerDetail,
 } from './seller'
 import { MOCK_FACETS } from './facets'
+import { mockDiscoveryAnswer } from './discovery'
 import { buildSegmentDetail } from '../adapters/catalog'
 import { CATALOG, MOCK_CATALOG_TOTALS, MOCK_SEGMENTS } from './segments'
 
@@ -90,55 +91,13 @@ export const mockApi = {
   },
 
   /**
-   * A canned answer, phrased against what the catalogue can actually evidence:
-   * distribution breadth and measured Connect reach. Every claim in `why` below
-   * is checkable against the three rows it names — a recommendation the drawer
-   * cannot back up with a number on the row is worse than no recommendation, so
-   * re-verify these if the fixture is regenerated.
+   * A canned answer per topic. The routing and the copy live in
+   * `./discovery` — each suggestion chip in the panel lands on a different
+   * slice of the catalogue, ranked on a different angle.
    */
   async askDiscovery(question: string): Promise<AiDiscoveryResponse> {
     await delay(900)
-    const top = MOCK_SEGMENTS.filter((s) =>
-      ['1009202201', '1009900401', '1009203901'].includes(s.id),
-    ).sort((a, b) => b.marketplaceScore - a.marketplaceScore)
-
-    const why: Record<string, string> = {
-      '1009202201':
-        'The **most widely distributed segment in the catalogue** (distribution rank 80), and top-decile on iOS reach at 9.7M — reaching both device families from one buy, and already live on Facebook.',
-      '1009900401':
-        'The only segment here that is top-decile on **both** iOS and Android reach (9.2M and 9.4M), so a single buy covers both without a second audience. Ownership-based rather than intent-based.',
-      '1009203901':
-        'The widest raw reach of the three at **13.4M cookies**, spread across **nine platforms** — the broadest footprint on this shortlist, and the strongest reach rank of the three at 56.',
-    }
-    const extra: Record<string, string | undefined> = {
-      '1009202201': 'Best distributed',
-      '1009900401': 'Cross-device',
-    }
-
-    return {
-      id: crypto.randomUUID(),
-      question,
-      lead: 'Here are the three strongest retail wearables segments in the catalogue, ranked on **measured Connect reach and distribution breadth** — the two things the marketplace feed reports directly.',
-      recommendations: top.map((s, i) => ({
-        rank: i + 1,
-        segmentId: s.id,
-        fullPath: s.fullPath,
-        marketplaceScore: s.marketplaceScore,
-        labels: s.labels,
-        platformCount: s.platformCount,
-        extraBadge: extra[s.id],
-        meta: [
-          `${(s.cookieReach / 1_000_000).toFixed(1)}M cookie reach`,
-          `${((s.iosReach ?? 0) / 1_000_000).toFixed(1)}M iOS`,
-          `${((s.androidReach ?? 0) / 1_000_000).toFixed(1)}M Android`,
-          `${s.platformCount} platforms`,
-        ],
-        why: why[s.id] ?? '',
-      })),
-      note: `**Why these three?** ${MOCK_SEGMENTS.length} retail wearables segments are in the catalogue. I ranked them on measured reach and how widely they are already distributed — not on price, and not on campaign performance, which this feed does not report.`,
-      candidateSegmentIds: top.map((s) => s.id),
-      totalCandidates: MOCK_SEGMENTS.length,
-    }
+    return mockDiscoveryAnswer(question)
   },
 
   async listSellerSegments(
