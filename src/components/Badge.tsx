@@ -27,7 +27,7 @@ export function PlatformBadge({ count }: { count: number }) {
   return (
     <span className="bdg bdg-multi">
       <span className="text-[10.5px] leading-none">◈</span>
-      {count} platforms
+      Activated in {count} platform{count === 1 ? '' : 's'}
     </span>
   )
 }

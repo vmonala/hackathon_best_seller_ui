@@ -30,7 +30,9 @@ export function useSegmentQueryParams() {
       destinations: params.getAll('dest') as DestinationId[],
       sellers: params.getAll('seller'),
       statuses: params.getAll('status'),
-      sort: (params.get('sort') as SortKey | null) ?? 'marketplace_score',
+      // Delivered reach, not the internal marketplace score: the score earns
+      // the performance labels but is not shown on the list page.
+      sort: (params.get('sort') as SortKey | null) ?? 'cookie_reach',
       direction: (params.get('dir') as 'asc' | 'desc' | null) ?? 'desc',
       page: Math.max(1, Number(params.get('page')) || 1),
       pageSize: parsePageSize(params.get('size')),

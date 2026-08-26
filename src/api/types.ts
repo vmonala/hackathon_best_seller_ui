@@ -66,6 +66,38 @@ export interface Segment {
   dateAdded: string
   category: string
   iabCategory?: string
+
+  /* ---- Catalogue attributes ----
+   * Everything below is catalogue metadata rather than delivered usage, so the
+   * live `/v1/segments` feed carries only the first two. A column or drawer row
+   * for an absent field renders as "-" rather than guessing a value.
+   */
+
+  /** Seller-authored copy, shown in the drawer's Configuration block. */
+  description?: string
+  /** e.g. "Standard", "Syndicated", "Custom (Private)" */
+  segmentType?: string
+  /** Rate card, per 1,000 impressions. */
+  cpm?: number
+  /** Ceiling the CPM is capped at for a single campaign. */
+  cpmCap?: number
+  /** Share of media the segment runs against programmatically. */
+  programmaticPctOfMedia?: number
+  iosReach?: number
+  androidReach?: number
+  /** Records the seller submitted, before identity resolution. */
+  inputRecords?: number
+  /** e.g. "Declared", "Modelled" */
+  dataSourceMethod?: string
+  dataSourceDetail?: string
+  /** e.g. "Household", "Individual" */
+  precisionLevel?: string
+  /** ISO date of the last full refresh. */
+  dateLastRefreshed?: string
+  /** ISO date the device and cookie reach figures were measured. */
+  reachAsOf?: string
+  /** ISO date the input record count was measured. */
+  inputRecordsAsOf?: string
 }
 
 export interface EarnedLabelExplanation {

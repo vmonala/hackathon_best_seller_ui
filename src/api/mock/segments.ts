@@ -8,10 +8,66 @@ function split(fullPath: string) {
   }
 }
 
+/**
+ * Catalogue attributes the fixtures do not spell out per segment.
+ *
+ * The mockup shows a rate card, device-level reach and an input record count
+ * alongside the delivered-usage numbers. Rather than hand-authoring eleven more
+ * fields on twenty rows, they are derived from the two figures each fixture does
+ * carry (`cpc` and `cookieReach`) at the ratios the design comps use, so the
+ * columns stay internally consistent — a bigger cookie reach always implies a
+ * bigger device reach and a bigger input file.
+ */
+const CPM_PER_CPC = 11.25
+const CPM_CAP_MULTIPLE = 2.02
+const IOS_PER_COOKIE = 2.55
+const ANDROID_PER_COOKIE = 1.78
+const INPUT_RECORDS_PER_COOKIE = 3.32
+
+/** Measurement dates the whole fixture catalogue shares. */
+const REACH_AS_OF = '2026-04-29'
+const INPUT_RECORDS_AS_OF = '2026-08-20'
+const LAST_REFRESHED = '2026-08-20'
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100
+}
+
 function seg(
   s: Omit<Segment, 'pathPrefix' | 'name'> & { fullPath: string },
 ): Segment {
-  return { ...s, ...split(s.fullPath) }
+  const { name, pathPrefix } = split(s.fullPath)
+  const cpm = round2(s.cpc * CPM_PER_CPC)
+  return {
+    ...s,
+    name,
+    pathPrefix,
+    description:
+      s.description ??
+      `${name} audience from ${s.seller}. Built from delivered marketplace ` +
+        `signals across ${s.category.toLowerCase()}, and refreshed monthly for ` +
+        `precision targeting on social, programmatic and CTV destinations.`,
+    segmentType: s.segmentType ?? 'Standard',
+    cpm: s.cpm ?? cpm,
+    cpmCap: s.cpmCap ?? round2(cpm * CPM_CAP_MULTIPLE),
+    // A few points above the advertiser-direct share: most media a marketplace
+    // segment touches is bought programmatically.
+    programmaticPctOfMedia:
+      s.programmaticPctOfMedia ?? s.advertiserDirectPctOfMedia + 4,
+    iosReach: s.iosReach ?? Math.round(s.cookieReach * IOS_PER_COOKIE),
+    androidReach: s.androidReach ?? Math.round(s.cookieReach * ANDROID_PER_COOKIE),
+    inputRecords:
+      s.inputRecords ?? Math.round(s.cookieReach * INPUT_RECORDS_PER_COOKIE),
+    // Provenance is not modelled in the fixtures; the drawer shows "-", which
+    // is what the catalogue does for a seller that has not declared it.
+    dataSourceMethod: s.dataSourceMethod,
+    dataSourceDetail: s.dataSourceDetail,
+    precisionLevel:
+      s.precisionLevel ?? (Number(s.id) % 2 === 0 ? 'Household' : 'Individual'),
+    dateLastRefreshed: s.dateLastRefreshed ?? LAST_REFRESHED,
+    reachAsOf: s.reachAsOf ?? REACH_AS_OF,
+    inputRecordsAsOf: s.inputRecordsAsOf ?? INPUT_RECORDS_AS_OF,
+  }
 }
 
 export const MOCK_SEGMENTS: Segment[] = [
