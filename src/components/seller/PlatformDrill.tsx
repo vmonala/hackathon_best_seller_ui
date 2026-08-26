@@ -11,15 +11,23 @@ import {
   growthClass,
   matchesLabelFilter,
 } from '@/lib/sellerLabels'
+import { matchesCategories } from '@/lib/sellerFilters'
 import { cn } from '@/lib/cn'
 
 interface Props {
   platform: PlatformPerformance
+  /** Category filter owned by the Performance section; empty means all. */
+  categories: string[]
   onClose: () => void
   onOpenSegment: (id: string) => void
 }
 
-export function PlatformDrill({ platform, onClose, onOpenSegment }: Props) {
+export function PlatformDrill({
+  platform,
+  categories,
+  onClose,
+  onOpenSegment,
+}: Props) {
   const { data, isLoading } = usePlatformSegments(platform.id)
   const [chips, setChips] = useState<Set<SellerLabelFilter>>(new Set())
 
@@ -30,8 +38,8 @@ export function PlatformDrill({ platform, onClose, onOpenSegment }: Props) {
       return next
     })
 
-  const all = data ?? []
-  // Chips are OR-ed: picking two shows segments carrying either label.
+  // Categories narrow the set first, then the label chips (OR-ed within).
+  const all = (data ?? []).filter((r) => matchesCategories(r.fullPath, categories))
   const rows = chips.size
     ? all.filter((r) => [...chips].some((c) => matchesLabelFilter(r.labels, c)))
     : all
@@ -53,6 +61,8 @@ export function PlatformDrill({ platform, onClose, onOpenSegment }: Props) {
         Your segments on {platform.name}, with the labels each one has earned on this
         destination. Labels are destination-specific — a segment can be a best seller
         here and dormant elsewhere.
+        {categories.length > 0 &&
+          ` Showing ${categories.join(', ')} segments only.`}
       </p>
 
       <div className="my-3 mb-3.5 flex flex-wrap gap-[7px]">
@@ -144,7 +154,9 @@ export function PlatformDrill({ platform, onClose, onOpenSegment }: Props) {
           <div className="px-6 py-[26px] text-center text-[13.5px] text-muted2">
             {isLoading
               ? 'Loading segments…'
-              : 'No segments with those labels on this destination.'}
+              : categories.length
+                ? 'No segments match the selected categories on this destination.'
+                : 'No segments with those labels on this destination.'}
           </div>
         )}
       </div>
