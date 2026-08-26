@@ -93,7 +93,9 @@ flowchart LR
     Resp --> Table["SegmentsTable\nmanualSorting: true"]
 ```
 
-URL params are deliberately shorter than API params — `q` → `search`, `label` → `labels`, `dest` → `destinations`, `dir` → `direction`. Changing any filter drops `page`, so pagination resets.
+URL params are deliberately shorter than API params — `q` → `search`, `label` → `labels`, `dest` → `destinations`, `dir` → `direction`, `size` → `pageSize`. Changing any filter or the page size drops `page`, so pagination resets; `size` is omitted from the URL at its default of 25.
+
+The pager (`src/components/Pager.tsx`) windows its page numbers around the current one — 586 pages at the default size — and offers 25/50/100/200 per page. An out-of-range `page` surviving in the URL from a wider filter is clamped in `runSegmentQuery`, so a stale link serves the last page instead of reading as "no matches".
 
 ---
 
@@ -116,7 +118,7 @@ flowchart TD
     Seller -->|Yes| Keep["Included → sort → paginate"]
 ```
 
-Reference implementation is `src/api/mock/index.ts`. Search also does a whitespace-stripped pass, so `"smart watch"` matches `"Smartwatch"`.
+Reference implementation is `src/api/segmentFilter.ts`, shared by both data sources — the live API takes no filter params, so fixtures and live results go through the same code. Search also does a whitespace-stripped pass, so `"smart watch"` matches `"Smartwatch"`.
 
 ---
 
@@ -272,11 +274,11 @@ components/
 
 1. Requires Node **18+** (20 LTS recommended). Check with `node -v`; `nvm install 20` if older.
 2. Install: `npm install`
-3. Configure: `cp .env.example .env` — defaults run on mock data, nothing else to set.
+3. Configure: `cp .env.example .env`. Marketplace segments and AI discovery default to **live** against `http://localhost:8000`; Data Seller Insights stays on fixtures. Set `VITE_API_MODE_SEGMENTS=mock` and `VITE_API_MODE_DISCOVERY=mock` to run with no backend at all.
 4. Run: `npm run dev`
 5. Open <http://localhost:5173>. A yellow banner names whichever modules are on mock data.
 
-No Python, FastAPI or database is needed for steps 1–5.
+No Python, FastAPI or database is needed once those two modules are set to `mock`.
 
 ### Troubleshooting: live mode loads but every field is empty
 
@@ -317,9 +319,9 @@ Styles missing? Tailwind only scans `./index.html` and `./src/**/*.{ts,tsx}` —
 |---|---|---|
 | `VITE_API_MODE` | `config.ts` | Default mode for every module: `mock` (default) or `live` |
 | `VITE_API_MODE_SEGMENTS` | `config.ts` | Override for the catalogue, facets and segment detail |
-| `VITE_API_MODE_DISCOVERY` | `config.ts` | Override for `POST /discovery/ask` |
+| `VITE_API_MODE_DISCOVERY` | `config.ts` | Override for the AI discovery panel |
 | `VITE_API_MODE_SELLER` | `config.ts` | Override for Data Seller Insights |
-| `VITE_API_BASE_URL` | `config.ts` → `API_BASE_URL` | Prefix for every request; default `/api` |
+| `VITE_API_BASE_URL` | `config.ts` → `API_BASE_URL` | Prefix for every request; default `/api/v1` (the dev proxy strips `/api`) |
 | `VITE_FASTAPI_ORIGIN` | `vite.config.ts` | Dev-proxy target; default `http://localhost:8000` |
 | `VITE_MOCK_LATENCY_MS` | `config.ts` → `MOCK_LATENCY_MS` | Simulated network delay, default `250` |
 
@@ -334,7 +336,7 @@ Vite reads `.env` once at **startup** — restart the dev server after any chang
 ```bash
 # .env — everything live
 VITE_API_MODE=live
-VITE_API_BASE_URL=/api
+VITE_API_BASE_URL=/api/v1
 VITE_FASTAPI_ORIGIN=http://localhost:8000
 ```
 
@@ -353,19 +355,19 @@ VITE_API_MODE_SELLER=live
 
 The banner across the top of the app lists exactly which modules are still on fixtures, so a half-live session is never ambiguous.
 
-`vite.config.ts` proxies `/api` to `VITE_FASTAPI_ORIGIN`, so **CORS does not need configuring** in development. To call FastAPI directly instead, set `VITE_API_BASE_URL=http://localhost:8000` and add `CORSMiddleware`.
+`vite.config.ts` proxies `/api` to `VITE_FASTAPI_ORIGIN`, **stripping the `/api` prefix** on the way through — so `/api/v1/segments` in the browser reaches `/v1/segments` on FastAPI, and **CORS does not need configuring** in development. To call FastAPI directly instead, set `VITE_API_BASE_URL=http://localhost:8000/v1` and add `CORSMiddleware`.
 
-| Method | Path | Returns | Module |
-|---|---|---|---|
-| `GET` | `/segments` | `Paginated[Segment]` | `segments` |
-| `GET` | `/segments/facets` | `SegmentFacets` | `segments` |
-| `GET` | `/segments/{id}` | `SegmentDetail` | `segments` |
-| `POST` | `/discovery/ask` | `AiDiscoveryResponse` | `discovery` |
-| `GET` | `/seller/segments` | `Paginated[SellerSegment]` | `seller` |
-| `GET` | `/seller/segments/{id}` | `SellerSegmentDetail` | `seller` |
-| `GET` | `/seller/summary` | `SellerInsightsSummary` | `seller` |
-| `GET` | `/seller/platforms` | `list[PlatformPerformance]` | `seller` |
-| `GET` | `/seller/platforms/{id}/segments` | `list[PlatformSegmentRow]` | `seller` |
+Endpoints actually in use, by module:
+
+| Method | Path | Returns | Module | Status |
+|---|---|---|---|---|
+| `GET` | `/segments?page=&page_size=` | `CatalogPage` | `segments` | **Live** — see [Live: the Segment Intelligence API](#live-the-segment-intelligence-api) |
+| `GET` | `/segments?query=` | `AgentAnswer` | `discovery` | **Live** |
+| `GET` | `/seller/segments` | `Paginated[SellerSegment]` | `seller` | Not built — fixtures |
+| `GET` | `/seller/segments/{id}` | `SellerSegmentDetail` | `seller` | Not built — fixtures |
+| `GET` | `/seller/summary` | `SellerInsightsSummary` | `seller` | Not built — fixtures |
+| `GET` | `/seller/platforms` | `list[PlatformPerformance]` | `seller` | Not built — fixtures |
+| `GET` | `/seller/platforms/{id}/segments` | `list[PlatformSegmentRow]` | `seller` | Not built — fixtures |
 
 `/seller/segments` takes `search`, `label` and `sort` (`revenue_rank` \| `revenue` \| `buyers_with_revenue`). `label` accepts any of the ten label keys plus `needs_attention` and `no_labels`.
 
@@ -376,6 +378,81 @@ Keep types in sync automatically once the backend is up:
 ```bash
 npx openapi-typescript http://localhost:8000/openapi.json -o src/api/schema.d.ts
 ```
+
+---
+
+## Live: the Segment Intelligence API
+
+Marketplace segments and AI discovery read from the **LiveRamp Bestsellers Segment Intelligence API**, which exposes one route with two behaviours, discriminated by a `mode` field:
+
+| Request | `mode` | Returns |
+|---|---|---|
+| `GET /v1/segments?page=&page_size=` | `catalog` | A page of the offline BigQuery dump of segment recommendation features |
+| `GET /v1/segments?query=<question>` | `agent` | A grounded answer from the Agentic RAG + Text2SQL pipeline, with citations and the SQL it ran |
+
+```mermaid
+flowchart TD
+    subgraph Browse
+        L["liveCatalog.ts
+loadCatalog()"] -->|"~74 requests
+page_size=200, 6 at a time"| API1["GET /v1/segments"]
+        API1 --> B["buildCatalog()
+adapters/catalog.ts"]
+        B --> C["LiveCatalog
+segments + byId + facets"]
+        C --> F["runSegmentQuery()
+segmentFilter.ts"]
+        F --> T["listSegments / getSegment / getFacets"]
+    end
+    subgraph Ask
+        D["askDiscovery()"] --> API2["GET /v1/segments?query="]
+        API2 --> E["toDiscoveryResponse()
+adapters/discovery.ts"]
+        E -->|"resolve sql_results
+against LiveCatalog"| C
+    end
+```
+
+### Why the whole catalogue is fetched up front
+
+The endpoint takes **only** `page` and `page_size` — no search, no filters, no sort — and there is no per-segment or facets route. So `liveCatalog.ts` pulls the full dump once (~14.6k rows, ~74 requests at the API's 200-row cap, about a second on localhost) and caches it for the lifetime of the tab. Every filter, sort, facet count and detail view is then served from memory through the same `segmentFilter.ts` the fixtures use. Only the mapped `Segment` objects are retained — the long `active_platform_names` / `usage_platform_names` arrays are collapsed into destinations and counts, then dropped.
+
+A failed load is not cached, so the app recovers once the backend comes back.
+
+### How wire rows map onto the UI
+
+The API reports **delivered marketplace usage over a single ~30-day window**. It does not report catalogue reach, rate cards, per-buyer channel splits, a creation date, or a prior-period baseline. `src/api/adapters/catalog.ts` is the only place that bridges the gap:
+
+| UI field | Live source | Note |
+|---|---|---|
+| `marketplaceScore` | Percentile of `popularity_rank` within the dump | 100 = most popular row. `popularity_rank` is ranked over a wider pool than the dump holds, so rows are re-ranked against each other |
+| `cpc` | `gross_data_revenue / impressions * 1000` | An **effective CPM**, not a cost per click |
+| `cookieReach` | `impressions` | **Delivered impressions**, not catalogue reach |
+| `advertiserDirectPctOfMedia` | `buyers_with_usage / active_buyers` | Share of enabled buyers that actually delivered |
+| `platformCount` | `platforms_with_usage` | Platforms that delivered, not merely distributed |
+| `seller` | First taxonomy token of `segment_name` | The payload carries `seller_customer_id`, not a name |
+| `destinations` | `active_platform_names` ∩ the seven destinations the UI can draw | `live: true` means it **delivered** impressions; distributed-but-idle destinations come through with `live: false` |
+| `status` | Always `available` | Per-user request state lives in another system |
+
+Because three columns carry a different metric than the fixtures do, `src/lib/metricLabels.ts` relabels their headers in live mode — **Effective CPM**, **Impressions Delivered**, **Buyers Delivering** — and hides **Date Added** entirely, so a header never disagrees with the number under it.
+
+### Performance labels in live mode
+
+Earned from catalogue-wide cut-offs, with the thresholds spelled out on the segment's Marketplace performance tab:
+
+| Label | Rule | Rows (of 14,633) |
+|---|---|---|
+| **Top performer** | Top 5% by popularity rank | 732 |
+| **Frequently reused** | `buyers_with_usage` in the top 10% (≥ 6 buyers) | 2,162 |
+| **Proven multi-platform** | Delivered on ≥ 4 platforms | 7,175 |
+| **Trending up** | *Never awarded* — no prior-period baseline in the payload | 0 |
+| **New & gaining traction** | *Never awarded* — no date-added in the payload | 0 |
+
+The two unearnable labels are dropped from the facet dropdown rather than shown at zero, and the detail page says explicitly why they cannot be earned.
+
+### AI discovery
+
+The agent answers in prose and returns its evidence — cited fragments, the SQL it executed, and the rows that came back. It does **not** return a ranked shortlist, so `adapters/discovery.ts` reconstructs the recommendation cards by pulling segment IDs out of `sql_results` and resolving them against the loaded catalogue. Rows naming a segment the catalogue does not hold are skipped and counted in the note rather than rendered as a half-empty card, and the left-hand table is only narrowed when at least one candidate resolved. Sources and SQL render as collapsed `<details>` blocks under the answer.
 
 ---
 
@@ -442,19 +519,24 @@ npm run preview      # serve the built dist/ locally
 
 ## Backend contract (short)
 
+The **segments and discovery** modules talk to the real Segment Intelligence API and adapt its snake_case payload in `src/api/adapters/` — nothing is required of that backend beyond what it already serves.
+
+These notes apply to the **seller** endpoints, which are still to be built:
+
 - **camelCase** response bodies; `page_size` is the only snake_case query param
 - **Repeated query keys** for list filters (`?labels=a&labels=b`), never CSV
-- **Labels OR-ed, destinations AND-ed**, and destinations only count when `live: true`
-- **Facet counts are catalogue-wide**, not scoped to the current result set
 - **Dates are bare `YYYY-MM-DD`** — timestamps break date formatting
 - `**bold**` is the **only markup** the UI parses in backend-authored prose
-- Declare `/segments/facets` **before** `/segments/{id}` or `facets` is read as an id
+
+And these hold everywhere, enforced client-side today:
+
+- **Labels OR-ed, destinations AND-ed**, and destinations only count when `live: true`
+- **Facet counts are catalogue-wide**, not scoped to the current result set
 
 ---
 
 ## Known gaps
 
-- Pagination is computed but no pager control is rendered (fixtures fit one page)
 - Reach and Pricing tabs show the fields we have; **Est. CPM is `cpc * 8.4`**, a hardcoded frontend multiplier with no backend origin
 - Discovery responses are canned in mock mode; if the backend streams, swap `apiFetch` for a `StreamingResponse` reader in `live.ts`
 - No auth anywhere — `src/api/http.ts` is the single place to add a token or tenant header
@@ -463,6 +545,10 @@ npm run preview      # serve the built dist/ locally
 - Seller module: the Categories and Destinations pickers on the Performance tab are static display chips, not wired to a facet source
 - Seller module: `/seller/segments` returns one unpaginated page — fine for a seller's own catalogue at fixture scale, revisit past a few hundred rows
 - Seller fixtures carry a single tenant (`123Push`) and no auth scoping; the live backend must derive the seller from the session
+- Live mode holds the whole catalogue in memory; fine at 14.6k rows, revisit if the dump grows by an order of magnitude or the backend gains real filter params
+- Three rows in the dump carry a negative `gross_data_revenue` (billing credits), which surfaces as a negative Effective CPM. That is the data, not a mapping bug
+- `weeksActive` equals `weeksInWindow` in live mode: every catalog row delivered somewhere in the window and the dump has no week-by-week breakdown to find gaps in
+- The Reach and Pricing tabs on segment detail still read from fields the live payload does not populate the way their labels imply
 - No tests yet
 
 ---

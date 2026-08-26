@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useAskDiscovery, useFacets, useSegments } from '@/api/queries'
 import type { SortKey } from '@/api/types'
 import { useSegmentQueryParams } from '@/lib/useSegmentQueryParams'
@@ -6,6 +6,7 @@ import { FilterBar } from '@/components/FilterBar'
 import { FilterChips } from '@/components/FilterChips'
 import { SegmentsTable } from '@/components/SegmentsTable'
 import { DiscoveryPanel } from '@/components/DiscoveryPanel'
+import { Pager } from '@/components/Pager'
 import { formatNumber } from '@/lib/labels'
 
 export function SegmentsPage() {
@@ -17,16 +18,22 @@ export function SegmentsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [discoveryOpen, setDiscoveryOpen] = useState(false)
   const discovery = useAskDiscovery()
+  const scrollRef = useRef<HTMLElement>(null)
+
+  // The AI narrows the left-hand table to its candidate set — but only when it
+  // actually resolved some. An answer with no segment shortlist (a conceptual
+  // question, or rows naming segments outside the catalog) leaves the table
+  // alone rather than emptying it.
+  const aiCandidateIds = discovery.data?.candidateSegmentIds
+  const showingAiResults =
+    discoveryOpen && Boolean(aiCandidateIds && aiCandidateIds.length > 0)
 
   const rows = useMemo(() => {
     const items = data?.items ?? []
-    // When the AI has answered, the left table narrows to its candidate set.
-    if (discoveryOpen && discovery.data) {
-      const ids = new Set(discovery.data.candidateSegmentIds)
-      return items.filter((s) => ids.has(s.id))
-    }
-    return items
-  }, [data?.items, discoveryOpen, discovery.data])
+    if (!showingAiResults) return items
+    const ids = new Set(aiCandidateIds)
+    return items.filter((s) => ids.has(s.id))
+  }, [data?.items, showingAiResults, aiCandidateIds])
 
   const toggleRow = useCallback((id: string) => {
     setSelected((prev) => {
@@ -58,7 +65,21 @@ export function SegmentsPage() {
     [query.sort, query.direction, update],
   )
 
-  const showingAiResults = discoveryOpen && Boolean(discovery.data)
+  // Paging keeps the filter bar in view instead of leaving the reader halfway
+  // down a fresh page of rows.
+  const handlePageChange = useCallback(
+    (page: number) => {
+      update({ page })
+      scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    },
+    [update],
+  )
+
+  const handlePageSizeChange = useCallback(
+    (pageSize: number) => update({ pageSize }),
+    [update],
+  )
+
   // The rail count is the AI's shortlist; totalCandidates is the wider pool it
   // considered and is shown separately so the two numbers never contradict.
   const total = showingAiResults
@@ -67,7 +88,10 @@ export function SegmentsPage() {
 
   return (
     <div className="flex min-h-0 flex-1">
-      <main className="min-w-0 flex-1 overflow-y-auto px-[30px] pt-[26px]">
+      <main
+        ref={scrollRef}
+        className="min-w-0 flex-1 overflow-y-auto px-[30px] pt-[26px]"
+      >
         <h1 className="m-0 flex items-start gap-1.5 text-[38px] font-bold leading-tight tracking-[-0.6px]">
           Data Marketplace Segments
           <span
@@ -131,6 +155,20 @@ export function SegmentsPage() {
             direction={query.direction}
             onSort={handleSort}
           />
+        )}
+
+        {/* AI results are a shortlist drawn from the loaded page, not a paged
+            set of their own, so the pager stands down while they are showing. */}
+        {!isError && !showingAiResults && (
+          <div className="border-t border-line px-0.5">
+            <Pager
+              page={query.page ?? 1}
+              pageSize={query.pageSize ?? 25}
+              total={data?.total ?? 0}
+              onPageChange={handlePageChange}
+              onPageSizeChange={handlePageSizeChange}
+            />
+          </div>
         )}
 
         <div className="mt-0.5 flex items-center gap-2 border-t border-line px-0.5 py-4 text-[13.5px] text-[#3C4043]">

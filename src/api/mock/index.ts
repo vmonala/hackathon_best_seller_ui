@@ -15,6 +15,7 @@ import type {
   SellerSummaryTile,
 } from '../types'
 import { matchesLabelFilter } from '@/lib/sellerLabels'
+import { runSegmentQuery } from '../segmentFilter'
 import {
   MOCK_CHANNELS,
   MOCK_PLATFORMS,
@@ -33,67 +34,6 @@ import {
 const delay = (ms = MOCK_LATENCY_MS) =>
   new Promise((resolve) => setTimeout(resolve, ms))
 
-function matchesSearch(segment: Segment, search?: string) {
-  if (!search) return true
-  const q = search.toLowerCase().trim()
-  if (!q) return true
-  return (
-    segment.fullPath.toLowerCase().includes(q) ||
-    segment.seller.toLowerCase().includes(q) ||
-    // Loose token match so "smart watch" also hits "Smartwatch".
-    segment.fullPath.toLowerCase().replace(/\s+/g, '').includes(q.replace(/\s+/g, ''))
-  )
-}
-
-export function filterSegments(query: SegmentQuery): Segment[] {
-  const {
-    search,
-    labels = [],
-    destinations = [],
-    sellers = [],
-    statuses = [],
-    sort = 'marketplace_score',
-    direction = 'desc',
-  } = query
-
-  const rows = MOCK_SEGMENTS.filter((s) => {
-    if (!matchesSearch(s, search)) return false
-    // Performance labels are OR-ed: selecting two labels widens the result set,
-    // which is what the independent per-label facet counts imply.
-    if (labels.length && !labels.some((l) => s.labels.includes(l))) return false
-    // Destinations are AND-ed: "proven on Facebook AND Snapchat" is the
-    // activation question buyers are actually asking.
-    if (
-      destinations.length &&
-      !destinations.every((d) =>
-        s.destinations.some((sd) => sd.destination === d && sd.live),
-      )
-    )
-      return false
-    if (sellers.length && !sellers.includes(s.seller)) return false
-    if (statuses.length && !statuses.includes(s.status)) return false
-    return true
-  })
-
-  const dir = direction === 'asc' ? 1 : -1
-  rows.sort((a, b) => {
-    switch (sort) {
-      case 'cpc':
-        return (a.cpc - b.cpc) * dir
-      case 'cookie_reach':
-        return (a.cookieReach - b.cookieReach) * dir
-      case 'date_added':
-        return (Date.parse(a.dateAdded) - Date.parse(b.dateAdded)) * dir
-      case 'name':
-        return a.name.localeCompare(b.name) * dir
-      case 'marketplace_score':
-      default:
-        return (a.marketplaceScore - b.marketplaceScore) * dir
-    }
-  })
-
-  return rows
-}
 
 
 const TILE_DEFS: Omit<SellerSummaryTile, 'count'>[] = [
@@ -130,17 +70,12 @@ export function filterSellerSegments(query: SellerSegmentQuery): SellerSegment[]
 export const mockApi = {
   async listSegments(query: SegmentQuery): Promise<Paginated<Segment>> {
     await delay()
-    const all = filterSegments(query)
-    const page = query.page ?? 1
-    const pageSize = query.pageSize ?? 25
-    const start = (page - 1) * pageSize
     return {
-      items: all.slice(start, start + pageSize),
-      total: all.length,
+      ...runSegmentQuery(MOCK_SEGMENTS, query),
+      // The fixtures stand in for a much larger catalogue, so the footer
+      // totals come from the scenario rather than from the 12 rows on hand.
       totalUnfiltered: MOCK_CATALOG_TOTALS.catalogTotal,
       totalBeforeLabelFilters: MOCK_CATALOG_TOTALS.filteredTotal,
-      page,
-      pageSize,
     }
   },
 

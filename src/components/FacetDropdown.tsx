@@ -38,36 +38,39 @@ export function FacetDropdown({
           style={{ width }}
           className="z-50 rounded-lg border border-[#D5D9DE] bg-white px-[17px] pb-3.5 pt-4 shadow-pop"
         >
-          {sections.map((section, i) => (
-            <div key={section.title}>
-              {i > 0 && <hr className="my-3 border-line" />}
-              <h4 className="mb-[3px] text-[12px] font-normal uppercase tracking-[0.7px] text-muted">
-                {section.title}
-              </h4>
-              <p className="mb-[11px] text-[11.5px] leading-[1.4] text-muted2">
-                {section.hint}
-              </p>
-              {section.options.map((opt) => {
-                const checked = section.selected.includes(opt.value)
-                return (
-                  <label
-                    key={opt.value}
-                    className="flex cursor-pointer items-center gap-2.5 py-1.5 text-[13.5px]"
-                  >
-                    <Checkbox
-                      checked={checked}
-                      onChange={() => section.onToggle(opt.value)}
-                      label={opt.label}
-                    />
-                    <span>{opt.label}</span>
-                    <span className="ml-auto text-[12px] tabular-nums text-muted2">
-                      {formatNumber(opt.count)}
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-          ))}
+          {/* Live seller/destination facets run to hundreds of options. */}
+          <div className="max-h-[min(60vh,420px)] overflow-y-auto">
+            {sections.map((section, i) => (
+              <div key={section.title}>
+                {i > 0 && <hr className="my-3 border-line" />}
+                <h4 className="mb-[3px] text-[12px] font-normal uppercase tracking-[0.7px] text-muted">
+                  {section.title}
+                </h4>
+                <p className="mb-[11px] text-[11.5px] leading-[1.4] text-muted2">
+                  {section.hint}
+                </p>
+                {section.options.map((opt) => {
+                  const checked = section.selected.includes(opt.value)
+                  return (
+                    <label
+                      key={opt.value}
+                      className="flex cursor-pointer items-center gap-2.5 py-1.5 text-[13.5px]"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onChange={() => section.onToggle(opt.value)}
+                        label={opt.label}
+                      />
+                      <span>{opt.label}</span>
+                      <span className="ml-auto text-[12px] tabular-nums text-muted2">
+                        {formatNumber(opt.count)}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
 
           <div className="mt-3 flex gap-2">
             <Popover.Close

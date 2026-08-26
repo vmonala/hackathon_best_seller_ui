@@ -130,6 +130,8 @@ export function DiscoveryPanel({
           <div className="my-4 rounded-lg border border-[#E2DDFB] bg-[#F7F5FF] px-3.5 py-3 text-[12.5px] leading-[1.55] text-indigo-ink">
             {renderBold(result.note)}
           </div>
+
+          <Evidence result={result} />
         </div>
       )}
 
@@ -164,6 +166,52 @@ export function DiscoveryPanel({
           AI-generated messages. Verify results or contact LiveRamp for help.
         </p>
       </div>
+    </div>
+  )
+}
+
+/**
+ * The agent grounds every answer in cited fragments and, on the Text2SQL route,
+ * the query it actually ran. Both are collapsed by default — they are there to
+ * be checked, not read.
+ */
+function Evidence({ result }: { result: AiDiscoveryResponse }) {
+  const { sqlUsed, sources } = result
+  if (!sqlUsed && !sources?.length) return null
+
+  return (
+    <div className="mb-4 space-y-2">
+      {sources?.length ? (
+        <details className="rounded-lg border border-line px-3.5 py-2.5">
+          <summary className="cursor-pointer text-[12.5px] font-semibold text-ink2">
+            Sources ({sources.length})
+          </summary>
+          <ul className="mt-2.5 space-y-2">
+            {sources.map((src, i) => (
+              <li key={i} className="text-[12px] leading-[1.5] text-muted">
+                <span className="font-semibold text-ink2">{src.source}</span>
+                <span className="ml-1.5 text-muted2">
+                  · relevance {src.score.toFixed(2)}
+                </span>
+                <p className="mt-0.5 break-words font-mono text-[11px] text-muted2">
+                  {src.text}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      {sqlUsed ? (
+        <details className="rounded-lg border border-line px-3.5 py-2.5">
+          <summary className="cursor-pointer text-[12.5px] font-semibold text-ink2">
+            SQL the agent ran
+          </summary>
+          <pre className="mt-2.5 max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[1.5] text-muted">
+            {sqlUsed}
+          </pre>
+        </details>
+      ) : null}
     </div>
   )
 }

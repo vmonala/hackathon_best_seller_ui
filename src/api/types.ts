@@ -156,6 +156,14 @@ export interface AiRecommendation {
   why: string
 }
 
+export interface AiDiscoveryCitation {
+  /** Origin label, e.g. "activation.md" or "BigQuery:best_sellers" */
+  source: string
+  text: string
+  /** 0-1; SQL results use 1.0 */
+  score: number
+}
+
 export interface AiDiscoveryResponse {
   id: string
   question: string
@@ -165,6 +173,14 @@ export interface AiDiscoveryResponse {
   /** IDs of every segment considered, used to narrow the left-hand table */
   candidateSegmentIds: string[]
   totalCandidates: number
+  /** SQL the agent executed, when it took the Text2SQL route */
+  sqlUsed?: string
+  /** Agent self-assessed confidence, 0-1 */
+  confidence?: number
+  /** Classified intent that drove the agent's routing */
+  intent?: string
+  /** Evidence fragments the answer cites */
+  sources?: AiDiscoveryCitation[]
 }
 
 /* ---------- Data Seller Insights ---------- */

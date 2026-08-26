@@ -1,4 +1,9 @@
 import { apiFetch } from './http'
+import { loadCatalog } from './liveCatalog'
+import { buildSegmentDetail } from './adapters/catalog'
+import { toDiscoveryResponse } from './adapters/discovery'
+import { runSegmentQuery } from './segmentFilter'
+import type { AgentAnswer } from './backend'
 import type {
   AiDiscoveryResponse,
   Paginated,
@@ -18,10 +23,18 @@ import type {
  * FastAPI client. Endpoint paths and param names below are the contract this
  * UI expects — adjust here (and only here) if your routes differ.
  *
- *   GET  /segments            -> Paginated[Segment]
- *   GET  /segments/{id}       -> SegmentDetail
- *   GET  /segments/facets     -> SegmentFacets
- *   POST /discovery/ask       -> AiDiscoveryResponse
+ * Marketplace segments + AI discovery are served by the Segment Intelligence
+ * API, which exposes a single route with two behaviours:
+ *
+ *   GET /segments?page=&page_size=  -> CatalogPage  (browse the catalog dump)
+ *   GET /segments?query=<question>  -> AgentAnswer  (Agentic RAG + Text2SQL)
+ *
+ * It has no filter, sort, detail or facets routes, so `listSegments`,
+ * `getSegment` and `getFacets` all read from the once-fetched, cached catalog
+ * in `liveCatalog.ts`. See `adapters/catalog.ts` for how the wire rows map onto
+ * the `Segment` shape, and which UI fields the payload cannot support.
+ *
+ * Data Seller Insights is not built on this backend yet:
  *
  *   GET  /seller/segments                    -> Paginated[SellerSegment]
  *   GET  /seller/segments/{id}               -> SellerSegmentDetail
@@ -30,36 +43,31 @@ import type {
  *   GET  /seller/platforms/{id}/segments     -> list[PlatformSegmentRow]
  */
 export const liveApi = {
-  listSegments(query: SegmentQuery): Promise<Paginated<Segment>> {
-    return apiFetch<Paginated<Segment>>('/segments', {
-      params: {
-        search: query.search,
-        // Repeated keys map to FastAPI Query(List[str]) params.
-        labels: query.labels,
-        destinations: query.destinations,
-        sellers: query.sellers,
-        statuses: query.statuses,
-        sort: query.sort,
-        direction: query.direction,
-        page: query.page,
-        page_size: query.pageSize,
-      },
-    })
+  async listSegments(query: SegmentQuery): Promise<Paginated<Segment>> {
+    const catalog = await loadCatalog()
+    return runSegmentQuery(catalog.segments, query)
   },
 
-  getSegment(id: string): Promise<SegmentDetail> {
-    return apiFetch<SegmentDetail>(`/segments/${encodeURIComponent(id)}`)
+  async getSegment(id: string): Promise<SegmentDetail> {
+    const catalog = await loadCatalog()
+    const entry = catalog.byId.get(id)
+    if (!entry) throw new Error(`Segment ${id} is not in the marketplace catalog`)
+    return buildSegmentDetail(entry, catalog)
   },
 
-  getFacets(): Promise<SegmentFacets> {
-    return apiFetch<SegmentFacets>('/segments/facets')
+  async getFacets(): Promise<SegmentFacets> {
+    const catalog = await loadCatalog()
+    return catalog.facets
   },
 
-  askDiscovery(question: string): Promise<AiDiscoveryResponse> {
-    return apiFetch<AiDiscoveryResponse>('/discovery/ask', {
-      method: 'POST',
-      body: JSON.stringify({ question }),
-    })
+  async askDiscovery(question: string): Promise<AiDiscoveryResponse> {
+    // The agent answers in prose and cites SQL rows; the catalog is needed to
+    // turn those rows back into segment cards.
+    const [answer, catalog] = await Promise.all([
+      apiFetch<AgentAnswer>('/segments', { params: { query: question } }),
+      loadCatalog(),
+    ])
+    return toDiscoveryResponse(answer, catalog)
   },
 
   listSellerSegments(query: SellerSegmentQuery): Promise<Paginated<SellerSegment>> {
