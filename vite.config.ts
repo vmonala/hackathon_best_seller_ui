@@ -20,6 +20,13 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
+      // Segment Intelligence API (tags). A separate service on its own port,
+      // so it gets its own marker prefix. Set VITE_TAGS_API_BASE_URL=/tags-api/v1.
+      '/tags-api': {
+        target: process.env.VITE_TAGS_ORIGIN ?? 'http://localhost:8001',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/tags-api/, ''),
+      },
     },
   },
 })

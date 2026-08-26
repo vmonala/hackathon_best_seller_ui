@@ -1,11 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { useAskDiscovery, useFacets, useSegments } from '@/api/queries'
-import type { SortKey } from '@/api/types'
+import { useNavigate } from 'react-router-dom'
+import { useAskDiscovery, useFacets, useSegmentIntel, useSegments } from '@/api/queries'
+import type { SegmentTag, SortKey } from '@/api/types'
 import { useSegmentQueryParams } from '@/lib/useSegmentQueryParams'
 import { FilterBar } from '@/components/FilterBar'
 import { FilterChips } from '@/components/FilterChips'
 import { SegmentsTable } from '@/components/SegmentsTable'
 import { DiscoveryPanel } from '@/components/DiscoveryPanel'
+import { SegmentDetailPanel } from '@/components/SegmentDetailPanel'
 import { Pager } from '@/components/Pager'
 import { formatNumber } from '@/lib/labels'
 
@@ -17,8 +19,24 @@ export function SegmentsPage() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [discoveryOpen, setDiscoveryOpen] = useState(false)
+  const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null)
   const discovery = useAskDiscovery()
   const scrollRef = useRef<HTMLElement>(null)
+  const navigate = useNavigate()
+
+  // There is room for one panel beside the table, so opening either the segment
+  // sheet or the AI panel stands the other one down.
+  const openSegment = useCallback((id: string) => {
+    setDiscoveryOpen(false)
+    setActiveSegmentId(id)
+  }, [])
+
+  const openDiscovery = useCallback(() => {
+    setActiveSegmentId(null)
+    setDiscoveryOpen(true)
+  }, [])
+
+  const panelOpen = discoveryOpen || activeSegmentId !== null
 
   // The AI narrows the left-hand table to its candidate set — but only when it
   // actually resolved some. An answer with no segment shortlist (a conceptual
@@ -28,12 +46,34 @@ export function SegmentsPage() {
   const showingAiResults =
     discoveryOpen && Boolean(aiCandidateIds && aiCandidateIds.length > 0)
 
-  const rows = useMemo(() => {
+  const pageRows = useMemo(() => {
     const items = data?.items ?? []
     if (!showingAiResults) return items
     const ids = new Set(aiCandidateIds)
     return items.filter((s) => ids.has(s.id))
   }, [data?.items, showingAiResults, aiCandidateIds])
+
+  // Tags (and, when enabled, measured reach) come from the Segment Intelligence
+  // API — a second backend, fetched per visible row after the table has painted.
+  const rowIds = useMemo(() => pageRows.map((s) => s.id), [pageRows])
+  const { data: intel } = useSegmentIntel(rowIds)
+
+  const tagsById = useMemo(() => {
+    const map = new Map<string, SegmentTag[]>()
+    intel?.forEach((v, id) => map.set(id, v.tags))
+    return map
+  }, [intel])
+
+  // Measured reach replaces the figures the catalog adapter derives. Off unless
+  // VITE_TAGS_REACH is set and the API serves the row route, so this is usually
+  // the identity mapping.
+  const rows = useMemo(() => {
+    if (!intel) return pageRows
+    return pageRows.map((s) => {
+      const reach = intel.get(s.id)?.reach
+      return reach ? { ...s, ...reach, reachMeasured: true } : s
+    })
+  }, [pageRows, intel])
 
   const toggleRow = useCallback((id: string) => {
     setSelected((prev) => {
@@ -112,8 +152,8 @@ export function SegmentsPage() {
           onUpdate={update}
           onToggle={toggleIn}
           activeFilterCount={activeFilterCount}
-          onOpenDiscovery={() => setDiscoveryOpen(true)}
-          compact={discoveryOpen}
+          onOpenDiscovery={openDiscovery}
+          compact={panelOpen}
         />
 
         {showingAiResults ? (
@@ -150,10 +190,14 @@ export function SegmentsPage() {
             onToggleRow={toggleRow}
             onToggleAll={toggleAll}
             isLoading={isLoading}
-            compact={discoveryOpen}
+            compact={panelOpen}
             sort={query.sort}
             direction={query.direction}
             onSort={handleSort}
+            onOpenSegment={openSegment}
+            activeSegmentId={activeSegmentId}
+            onViewFullDetails={(id) => navigate(`/segments/${id}`)}
+            tagsById={tagsById}
           />
         )}
 
@@ -176,7 +220,7 @@ export function SegmentsPage() {
           {!showingAiResults && activeFilterCount > 0 && data && (
             <span className="text-muted2">
               · filtered from {formatNumber(data.totalBeforeLabelFilters ?? data.totalUnfiltered)}{' '}
-              by performance labels
+              by performance filters
             </span>
           )}
           {selected.size > 0 && (
@@ -190,7 +234,12 @@ export function SegmentsPage() {
         </div>
       </main>
 
-      {discoveryOpen ? (
+      {activeSegmentId !== null ? (
+        <SegmentDetailPanel
+          segmentId={activeSegmentId}
+          onClose={() => setActiveSegmentId(null)}
+        />
+      ) : discoveryOpen ? (
         <DiscoveryPanel
           onClose={() => setDiscoveryOpen(false)}
           onAsk={(q) => discovery.mutate(q)}
@@ -200,7 +249,7 @@ export function SegmentsPage() {
         />
       ) : (
         <button
-          onClick={() => setDiscoveryOpen(true)}
+          onClick={openDiscovery}
           className="h-full shrink-0 rounded-l-md bg-green px-[7px] py-4 text-[12.5px] font-bold text-[#04331E]"
           style={{ writingMode: 'vertical-rl' }}
         >

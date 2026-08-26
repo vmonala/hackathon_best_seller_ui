@@ -42,6 +42,35 @@ export const LABEL_META: Record<
   },
 }
 
+/**
+ * Glyphs for the Segment Intelligence tags. The API sends no icon, so the mark
+ * is chosen here from the tag's slug, with a per-category fallback so a tag
+ * added to the vocabulary later still draws something sensible.
+ */
+const TAG_ICONS: Record<string, string> = {
+  top_facebook_activated: '◉',
+  top_ttd_activated: '◉',
+  top_google_activated: '◉',
+  multi_platform_powerhouse: '◈',
+  high_ios_reach: '▲',
+  high_android_reach: '▲',
+  massive_cookie_scale: '◎',
+  cross_device_champion: '⇄',
+  highly_distributed: '⇗',
+  buyer_magnet: '✦',
+  broad_platform_breadth: '◇',
+}
+
+const TAG_CATEGORY_ICONS: Record<string, string> = {
+  platform: '◈',
+  reach: '◎',
+  distribution: '⇗',
+}
+
+export function tagIcon(tag: { key: string; category: string }): string {
+  return TAG_ICONS[tag.key] ?? TAG_CATEGORY_ICONS[tag.category] ?? '•'
+}
+
 export interface DestinationMeta {
   name: string
   /** Fallback mark: one or two initials, drawn when there is no brand logo. */

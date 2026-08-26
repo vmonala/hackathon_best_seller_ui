@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react'
 import type { SegmentDetail } from '@/api/types'
-import { LabelBadge } from './Badge'
 import { UsageSparkline } from './UsageSparkline'
 import { destinationMeta, USAGE_TEXT, formatDate } from '@/lib/labels'
 import { DestinationChip } from './DestinationDots'
-import { renderBold } from '@/lib/markdown'
+import { TagExplanations } from './TagChip'
 
 export function PerformanceTab({ segment }: { segment: SegmentDetail }) {
   const p = segment.performance
@@ -81,28 +80,8 @@ export function PerformanceTab({ segment }: { segment: SegmentDetail }) {
       </div>
 
       <div className="min-w-0 flex-[0.85]">
-        <h5 className="sec-label mt-0">How this segment earned its labels</h5>
-        {p.earnedLabels.map((e, i) => (
-          <div
-            key={e.label}
-            className="flex items-start gap-[11px] py-2.5"
-            style={{
-              borderBottom:
-                i === p.earnedLabels.length - 1 ? 'none' : '1px solid #F1F3F5',
-            }}
-          >
-            <LabelBadge label={e.label} muted={!e.earned} short />
-            <div
-              className={
-                e.earned
-                  ? 'text-[12.5px] leading-[1.5] text-muted'
-                  : 'text-[12.5px] leading-[1.5] text-[#9AA0A6]'
-              }
-            >
-              {renderBold(e.explanation)}
-            </div>
-          </div>
-        ))}
+        <h5 className="sec-label mt-0">How it earned its tags</h5>
+        <TagExplanations tags={segment.tags} />
 
         <h5 className="sec-label mt-[22px]">Evidence quality</h5>
         <Row label="Attribution confidence" value={<b>{p.evidence.attributionConfidence}</b>} />

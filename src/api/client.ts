@@ -18,7 +18,15 @@ import type {
 } from './types'
 
 export interface SegmentsApi {
-  listSegments(query: SegmentQuery): Promise<Paginated<Segment>>
+  /**
+   * `tagIds` narrows to the segments carrying the query's tags. It is resolved
+   * against the Segment Intelligence API by the caller (`useSegments`) rather
+   * than here, so neither adapter has to know about that second service.
+   */
+  listSegments(
+    query: SegmentQuery,
+    tagIds?: ReadonlySet<string> | null,
+  ): Promise<Paginated<Segment>>
   getSegment(id: string): Promise<SegmentDetail>
   getFacets(): Promise<SegmentFacets>
   askDiscovery(question: string): Promise<AiDiscoveryResponse>

@@ -1,15 +1,14 @@
 import type { SegmentFacets, SegmentQuery, SortKey } from '@/api/types'
-import { LABEL_META, destinationName } from '@/lib/labels'
+import { useTagVocabulary } from '@/api/queries'
+import type { FilterKey } from '@/lib/useSegmentQueryParams'
+import { LABEL_META, destinationName, tagIcon } from '@/lib/labels'
 import { SORT_OPTIONS } from '@/lib/metricLabels'
 import type { DestinationId, PerformanceLabel } from '@/api/types'
 
 interface FilterChipsProps {
   query: SegmentQuery
   facets?: SegmentFacets
-  onToggle: (
-    key: 'labels' | 'destinations' | 'sellers' | 'statuses',
-    value: string,
-  ) => void
+  onToggle: (key: FilterKey, value: string) => void
   onUpdate: (patch: Partial<SegmentQuery>) => void
   onClearAll: () => void
 }
@@ -21,12 +20,24 @@ export function FilterChips({
   onUpdate,
   onClearAll,
 }: FilterChipsProps) {
-  const chips: { key: 'labels' | 'destinations' | 'sellers' | 'statuses'; value: string; text: string }[] = [
+  // Named so a tag chip reads as its badge rather than its slug; until the
+  // vocabulary lands the slug is still removable, which is what the chip is for.
+  const { data: tags } = useTagVocabulary()
+
+  const chips: { key: FilterKey; value: string; text: string }[] = [
     ...(query.labels ?? []).map((l: PerformanceLabel) => ({
       key: 'labels' as const,
       value: l,
       text: LABEL_META[l].text,
     })),
+    ...(query.tags ?? []).map((slug) => {
+      const tag = tags?.find((t) => t.key === slug)
+      return {
+        key: 'tags' as const,
+        value: slug,
+        text: tag ? `${tagIcon(tag)} ${tag.name}` : slug,
+      }
+    }),
     ...(query.destinations ?? []).map((d: DestinationId) => ({
       key: 'destinations' as const,
       value: d,

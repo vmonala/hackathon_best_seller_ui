@@ -31,14 +31,16 @@ export function buildQueryString(params: Record<string, QueryValue>): string {
 type ApiRequestInit = Omit<RequestInit, 'headers'> & {
   headers?: Record<string, string>
   params?: Record<string, QueryValue>
+  /** Overrides `API_BASE_URL` — the tags client talks to a second origin. */
+  baseUrl?: string
 }
 
 export async function apiFetch<T>(
   path: string,
   init?: ApiRequestInit,
 ): Promise<T> {
-  const { params, ...rest } = init ?? {}
-  const url = `${API_BASE_URL}${path}${params ? buildQueryString(params) : ''}`
+  const { params, baseUrl, ...rest } = init ?? {}
+  const url = `${baseUrl ?? API_BASE_URL}${path}${params ? buildQueryString(params) : ''}`
 
   const res = await fetch(url, {
     ...rest,

@@ -11,6 +11,7 @@ import type {
   SegmentPerformance,
 } from '../types'
 import { destinationName, registerDestinationName } from '@/lib/labels'
+import { SYNTHETIC_CATALOG_METRICS } from '@/lib/metricLabels'
 
 /**
  * Translates `/v1/segments` catalog rows into the `Segment` shape the UI
@@ -168,13 +169,86 @@ function deliveringBuyerPct(row: SegmentFeatureRow) {
   return Math.min(100, Math.round((row.buyers_with_usage / row.active_buyers) * 100))
 }
 
+/**
+ * Illustrative catalogue attributes for live mode.
+ *
+ * `/v1/segments` reports delivered usage only: no rate card, no device-level
+ * reach, no input record count, no created date. Without them the table is
+ * three columns wide, so each one is derived from figures the row *does* carry,
+ * at the ratios the design comps use. Two consequences worth knowing:
+ *
+ *   - Every value is a deterministic function of the row, so it is stable
+ *     across renders, sorts and pages — no reshuffling numbers.
+ *   - None of it is measured. The column picker tags these columns "estimated"
+ *     and a footnote under the table says so. `VITE_SYNTHETIC_CATALOG_METRICS=false`
+ *     turns them off and shows only what the backend reports.
+ */
+const RATE_CARD_OVER_EFFECTIVE = 1.35
+const CPM_CAP_MULTIPLE = 2.02
+const IOS_PER_IMPRESSION = 0.42
+const ANDROID_PER_IMPRESSION = 0.29
+const INPUT_RECORDS_PER_IMPRESSION = 0.55
+
+const DATA_SOURCE_METHODS = ['Declared', 'Modelled', 'Observed'] as const
+const PRECISION_LEVELS = ['Household', 'Individual'] as const
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100
+}
+
+/** Stable pseudo-random index into `length`, drawn from the segment id. */
+function pick(id: number, length: number) {
+  return Math.abs(id) % length
+}
+
+function synthesiseCatalogAttributes(
+  row: SegmentFeatureRow,
+  segment: Segment,
+): Partial<Segment> {
+  const id = row.dms_segment_id
+  // A list rate sits above the realised effective CPM: not every delivered
+  // impression bills at the top of the rate card.
+  const cpm = round2(segment.cpc * RATE_CARD_OVER_EFFECTIVE)
+  const impressions = Math.max(0, row.impressions)
+
+  return {
+    cpm,
+    cpmCap: round2(cpm * CPM_CAP_MULTIPLE),
+    programmaticPctOfMedia: Math.min(
+      100,
+      segment.advertiserDirectPctOfMedia + 4 + pick(id, 7),
+    ),
+    iosReach: Math.round(impressions * IOS_PER_IMPRESSION),
+    androidReach: Math.round(impressions * ANDROID_PER_IMPRESSION),
+    inputRecords: Math.round(impressions * INPUT_RECORDS_PER_IMPRESSION),
+    dataSourceMethod: DATA_SOURCE_METHODS[pick(id, DATA_SOURCE_METHODS.length)],
+    dataSourceDetail:
+      row.segment_type === 'Standard' ? 'Syndicated taxonomy' : row.segment_type,
+    precisionLevel: PRECISION_LEVELS[pick(id, PRECISION_LEVELS.length)],
+    dateLastRefreshed: row.usage_end_date,
+    reachAsOf: row.usage_end_date,
+    inputRecordsAsOf: row.usage_end_date,
+    // The window start is the earliest date the row evidences, so an estimated
+    // "added" date is that, less 1–24 months.
+    dateAdded: monthsBefore(row.usage_start_date, 1 + pick(id, 24)),
+  }
+}
+
+/** ISO date `months` before `iso`. */
+function monthsBefore(iso: string, months: number) {
+  const d = new Date(`${iso}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return iso
+  d.setMonth(d.getMonth() - months)
+  return d.toISOString().slice(0, 10)
+}
+
 function mapRow(
   row: SegmentFeatureRow,
   marketplaceScore: number,
   labels: PerformanceLabel[],
 ): Segment {
   const tokens = pathTokens(row.segment_name)
-  return {
+  const segment: Segment = {
     id: String(row.dms_segment_id),
     fullPath: row.segment_name,
     ...splitPath(row.segment_name),
@@ -193,7 +267,16 @@ function mapRow(
     // available. The Date Added column is hidden in live mode.
     dateAdded: row.usage_end_date,
     category: tokens[1] ?? tokens[0] ?? 'Uncategorised',
+    description: row.segment_description ?? undefined,
+    segmentType: row.segment_type,
   }
+
+  // The rate card, device-level reach, input record count, provenance and
+  // created date are not in this feed. Off, they render "-"; on, they carry a
+  // derived stand-in so the table is not three columns wide.
+  return SYNTHETIC_CATALOG_METRICS
+    ? { ...segment, ...synthesiseCatalogAttributes(row, segment) }
+    : segment
 }
 
 function deriveFacets(segments: Segment[]): SegmentFacets {
@@ -210,7 +293,7 @@ function deriveFacets(segments: Segment[]): SegmentFacets {
   }
 
   const byCountDesc = <T extends string>(a: FacetOption<T>, b: FacetOption<T>) =>
-    b.count - a.count
+    (b.count ?? 0) - (a.count ?? 0)
 
   return {
     // Only labels the dump can actually award; trending_up and

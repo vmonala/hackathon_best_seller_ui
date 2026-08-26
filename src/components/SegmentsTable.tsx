@@ -1,22 +1,180 @@
-import { useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-  type ColumnDef,
-} from '@tanstack/react-table'
-import type { Segment, SortKey } from '@/api/types'
+import { useMemo, useState } from 'react'
+import * as Popover from '@radix-ui/react-popover'
+import type { Segment, SegmentTag, SortKey } from '@/api/types'
 import { Checkbox } from './Checkbox'
 import { LabelBadge, PlatformBadge } from './Badge'
-import { ScoreBar } from './ScoreBar'
+import { TagChip } from './TagChip'
 import { DestinationDots } from './DestinationDots'
 import { formatDate, formatReach } from '@/lib/labels'
-import { METRIC_LABELS, SHOW_DATE_ADDED } from '@/lib/metricLabels'
+import {
+  ESTIMATED_CATALOG_METRICS,
+  METRIC_LABELS,
+  REAL_REACH_METRICS,
+  SHOW_CATALOG_METRICS,
+  SHOW_DATE_ADDED,
+} from '@/lib/metricLabels'
 import { cn } from '@/lib/cn'
 
-const col = createColumnHelper<Segment>()
+/**
+ * One scrollable metric column.
+ *
+ * Segment Name is not in this list: it is pinned to the left edge with the
+ * select box, so it stays readable while the metrics scroll underneath the
+ * horizontal scrollbar. Everything here is fixed-width so the pinned columns
+ * can be positioned with `sticky` offsets that do not shift as rows load.
+ */
+interface MetricColumn {
+  id: string
+  header: string
+  width: number
+  /**
+   * Whether the current API mode reports this field at all. A column without
+   * data stays in the picker — so nothing is silently missing — but starts
+   * hidden rather than filling the table with dashes.
+   */
+  hasData: boolean
+  /** Checked by default in the picker. */
+  defaultVisible: boolean
+  /**
+   * Catalogue attribute rather than delivered usage. In live mode these carry a
+   * derived stand-in, so they are tagged as estimates wherever they appear.
+   */
+  catalogAttribute?: boolean
+  /**
+   * Device-level reach or input records — derived today, but measured once the
+   * tags API supplies them, which flips `catalogAttribute` off at render time.
+   */
+  reachMetric?: boolean
+  sortKey?: SortKey
+  cell: (s: Segment) => React.ReactNode
+}
+
+const dash = <span className="text-muted2">-</span>
+
+const usd = (n?: number) => (n == null ? dash : `$${n.toFixed(2)}`)
+const pct = (n?: number) => (n == null ? dash : `${n}%`)
+const reach = (n?: number) => (n == null ? dash : formatReach(n))
+
+const METRIC_COLUMNS: MetricColumn[] = [
+  {
+    id: 'cpm',
+    header: 'CPM',
+    width: 92,
+    hasData: SHOW_CATALOG_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS,
+    catalogAttribute: true,
+    cell: (s) => usd(s.cpm),
+  },
+  {
+    id: 'programmaticPctOfMedia',
+    header: 'Programmatic % of Media',
+    width: 132,
+    hasData: SHOW_CATALOG_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS,
+    catalogAttribute: true,
+    cell: (s) => pct(s.programmaticPctOfMedia),
+  },
+  {
+    id: 'cpmCap',
+    header: 'CPM Cap',
+    width: 100,
+    hasData: SHOW_CATALOG_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS,
+    catalogAttribute: true,
+    cell: (s) => usd(s.cpmCap),
+  },
+  {
+    id: 'pctMedia',
+    header: METRIC_LABELS.pctMedia,
+    width: 168,
+    hasData: true,
+    defaultVisible: true,
+    cell: (s) => pct(s.advertiserDirectPctOfMedia),
+  },
+  {
+    id: 'cpc',
+    header: METRIC_LABELS.cpc,
+    width: 92,
+    hasData: true,
+    defaultVisible: true,
+    sortKey: 'cpc',
+    cell: (s) => usd(s.cpc),
+  },
+  {
+    id: 'cookieReach',
+    header: METRIC_LABELS.reach,
+    width: 104,
+    hasData: true,
+    defaultVisible: true,
+    sortKey: 'cookie_reach',
+    cell: (s) => reach(s.cookieReach),
+  },
+  {
+    id: 'iosReach',
+    header: 'iOS Reach',
+    width: 100,
+    hasData: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
+    catalogAttribute: true,
+    reachMetric: true,
+    cell: (s) => reach(s.iosReach),
+  },
+  {
+    id: 'androidReach',
+    header: 'Android Reach',
+    width: 112,
+    hasData: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
+    catalogAttribute: true,
+    reachMetric: true,
+    cell: (s) => reach(s.androidReach),
+  },
+  {
+    id: 'inputRecords',
+    header: 'Input Records',
+    width: 110,
+    hasData: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
+    catalogAttribute: true,
+    reachMetric: true,
+    cell: (s) => reach(s.inputRecords),
+  },
+  {
+    id: 'dateAdded',
+    header: 'Date Added',
+    width: 118,
+    hasData: SHOW_DATE_ADDED,
+    defaultVisible: SHOW_DATE_ADDED,
+    catalogAttribute: true,
+    sortKey: 'date_added',
+    cell: (s) => formatDate(s.dateAdded),
+  },
+  // Off by default: the mockup's column set is the rate card and the reach
+  // figures, and the performance labels are shown as badges under each segment
+  // name.
+  {
+    id: 'destinations',
+    header: 'Active Destinations',
+    width: 150,
+    hasData: true,
+    defaultVisible: false,
+    cell: (s) => <DestinationDots destinations={s.destinations} />,
+  },
+]
+
+/**
+ * Every column is offered in the picker. The live usage feed carries no rate
+ * card, no device-level reach, no input record count and no created date, so
+ * those columns render "-" there; they are listed as "no data" and start
+ * hidden instead of being dropped, which otherwise reads as a missing feature.
+ */
+const AVAILABLE_COLUMNS = METRIC_COLUMNS
+
+const SELECT_WIDTH = 34
+/** Pinned name column: full width, and the narrower one used beside a panel. */
+const NAME_WIDTH = 330
+const NAME_WIDTH_COMPACT = 232
+const ACTIONS_WIDTH = 44
 
 interface SegmentsTableProps {
   rows: Segment[]
@@ -28,6 +186,17 @@ interface SegmentsTableProps {
   sort?: SortKey
   direction?: 'asc' | 'desc'
   onSort?: (key: SortKey) => void
+  /** Row click — opens the segment detail panel. */
+  onOpenSegment?: (id: string) => void
+  /** The segment whose panel is open, highlighted in the table. */
+  activeSegmentId?: string | null
+  /** "View full details" in the row menu. */
+  onViewFullDetails?: (id: string) => void
+  /**
+   * Segment Intelligence tags by segment id. Loads after the rows do, from a
+   * separate backend, so it is optional — the table renders fine without it.
+   */
+  tagsById?: Map<string, SegmentTag[]>
 }
 
 export function SegmentsTable({
@@ -40,134 +209,39 @@ export function SegmentsTable({
   sort,
   direction,
   onSort,
+  onOpenSegment,
+  activeSegmentId,
+  onViewFullDetails,
+  tagsById,
 }: SegmentsTableProps) {
-  const navigate = useNavigate()
+  const [visible, setVisible] = useState<Set<string>>(
+    () => new Set(AVAILABLE_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id)),
+  )
+  const [menuRow, setMenuRow] = useState<string | null>(null)
 
-  const columns = useMemo<ColumnDef<Segment, any>[]>(() => {
-    const nameCol = col.accessor('name', {
-      id: 'name',
-      header: 'Segment Name',
-      meta: { sortKey: 'name' as SortKey, width: compact ? undefined : '44%' },
-      cell: (ctx) => {
-        const s = ctx.row.original
-        return (
-          <div>
-            <div
-              className={cn(
-                'leading-[1.35] text-ink',
-                compact ? 'text-[12.5px]' : 'text-[13.5px]',
-              )}
-            >
-              <span className="text-[#6B7280]">
-                {compact ? compactPrefix(s.pathPrefix) : s.pathPrefix}
-              </span>{' '}
-              {s.name}
-            </div>
-            {s.labels.length > 0 && (
-              <div className="mt-[7px] flex flex-wrap items-center gap-1.5">
-                {s.labels
-                  .filter((l) => l !== 'proven_multi_platform')
-                  .slice(0, compact ? 2 : 2)
-                  .map((l) => (
-                    <LabelBadge key={l} label={l} short={compact} />
-                  ))}
-                {s.labels.includes('proven_multi_platform') && (
-                  <PlatformBadge count={s.platformCount} />
-                )}
-              </div>
-            )}
-          </div>
-        )
-      },
-    })
+  const columns = useMemo(
+    () => AVAILABLE_COLUMNS.filter((c) => visible.has(c.id)),
+    [visible],
+  )
 
-    const scoreCol = col.accessor('marketplaceScore', {
-      id: 'marketplaceScore',
-      header: compact ? 'Score' : 'Marketplace Score',
-      meta: { sortKey: 'marketplace_score' as SortKey, width: compact ? '70px' : '11%' },
-      cell: (ctx) =>
-        compact ? (
-          <span className="text-sm font-bold tabular-nums">{ctx.getValue()}</span>
-        ) : (
-          <ScoreBar score={ctx.getValue()} />
-        ),
-    })
+  // Whether the reach figures on screen are measured rather than derived. The
+  // flag only says the app asked; the rows say whether the API answered, and
+  // the header and the footnote have to agree with the numbers underneath them.
+  const reachMeasured = REAL_REACH_METRICS && rows.some((r) => r.reachMeasured)
 
-    const cpcCol = col.accessor('cpc', {
-      id: 'cpc',
-      header: compact ? METRIC_LABELS.cpcShort : METRIC_LABELS.cpc,
-      meta: { sortKey: 'cpc' as SortKey, width: compact ? '60px' : '7%' },
-      cell: (ctx) => `$${ctx.getValue().toFixed(2)}`,
-    })
+  // Named in the footnote so it is clear which numbers on screen are derived.
+  const estimatedShown = ESTIMATED_CATALOG_METRICS
+    ? columns
+        .filter((c) => c.catalogAttribute && !(reachMeasured && c.reachMetric))
+        .map((c) => c.header)
+    : []
 
-    const selectCol = col.display({
-      id: 'select',
-      meta: { width: compact ? '22px' : '26px' },
-      header: () => (
-        <Checkbox
-          checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
-          indeterminate={
-            rows.some((r) => selected.has(r.id)) &&
-            !rows.every((r) => selected.has(r.id))
-          }
-          onChange={onToggleAll}
-          label="Select all segments"
-        />
-      ),
-      cell: (ctx) => (
-        <Checkbox
-          checked={selected.has(ctx.row.original.id)}
-          onChange={() => onToggleRow(ctx.row.original.id)}
-          label={`Select ${ctx.row.original.name}`}
-        />
-      ),
-    })
+  const headerFor = (c: MetricColumn) =>
+    reachMeasured && c.id === 'cookieReach' ? METRIC_LABELS.reachMeasured : c.header
 
-    if (compact) return [selectCol, nameCol, scoreCol, cpcCol]
-
-    return [
-      selectCol,
-      nameCol,
-      scoreCol,
-      col.display({
-        id: 'destinations',
-        header: 'Active Destinations',
-        meta: { width: '11%' },
-        cell: (ctx) => <DestinationDots destinations={ctx.row.original.destinations} />,
-      }),
-      col.accessor('advertiserDirectPctOfMedia', {
-        id: 'pctMedia',
-        header: METRIC_LABELS.pctMedia,
-        meta: { width: '9%' },
-        cell: (ctx) => `${ctx.getValue()}%`,
-      }),
-      cpcCol,
-      col.accessor('cookieReach', {
-        id: 'cookieReach',
-        header: METRIC_LABELS.reach,
-        meta: { sortKey: 'cookie_reach' as SortKey, width: '9%' },
-        cell: (ctx) => formatReach(ctx.getValue()),
-      }),
-      // The live catalog carries no creation date, so there is nothing to show.
-      ...(SHOW_DATE_ADDED
-        ? [
-            col.accessor('dateAdded', {
-              id: 'dateAdded',
-              header: 'Date Added',
-              meta: { sortKey: 'date_added' as SortKey, width: '9%' },
-              cell: (ctx) => formatDate(ctx.getValue()),
-            }),
-          ]
-        : []),
-    ]
-  }, [compact, rows, selected, onToggleAll, onToggleRow])
-
-  const table = useReactTable({
-    data: rows,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    manualSorting: true,
-  })
+  const nameWidth = compact ? NAME_WIDTH_COMPACT : NAME_WIDTH
+  const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.id))
+  const someChecked = rows.some((r) => selected.has(r.id))
 
   if (isLoading) return <TableSkeleton compact={compact} />
 
@@ -183,63 +257,416 @@ export function SegmentsTable({
   }
 
   return (
-    <table className="mt-2.5 w-full border-collapse">
-      <thead>
-        {table.getHeaderGroups().map((hg) => (
-          <tr key={hg.id}>
-            {hg.headers.map((header) => {
-              const meta = header.column.columnDef.meta as
-                | { sortKey?: SortKey; width?: string }
-                | undefined
-              const sortable = Boolean(meta?.sortKey && onSort)
-              const isActive = sort === meta?.sortKey
-              return (
-                <th
-                  key={header.id}
-                  style={{ width: meta?.width }}
-                  className={cn(
-                    'border-b-[1.5px] border-[#C9CDD3] px-2.5 py-3 text-left align-bottom text-[12.5px] font-bold leading-[1.25] text-[#202124]',
-                    compact && 'text-[11.5px]',
-                    sortable && 'cursor-pointer select-none hover:text-indigo-ink',
-                  )}
-                  onClick={
-                    sortable ? () => onSort!(meta!.sortKey as SortKey) : undefined
-                  }
+    <div className="relative mt-2.5">
+      {/* The gear floats above the scroller so it stays reachable at any
+          horizontal scroll position, like the mockup. */}
+      <ColumnPicker
+        visible={visible}
+        onChange={setVisible}
+        reachMeasured={reachMeasured}
+      />
+
+      <div className="overflow-x-auto">
+        {/* border-separate, not border-collapse: a collapsed table drops the
+            borders of `position: sticky` cells, which is how the pinned Segment
+            Name column is held against the left edge. */}
+        <table
+          className="w-full table-fixed border-separate border-spacing-0"
+          style={{
+            minWidth:
+              SELECT_WIDTH +
+              nameWidth +
+              columns.reduce((sum, c) => sum + c.width, 0) +
+              ACTIONS_WIDTH,
+          }}
+        >
+          <colgroup>
+            <col style={{ width: SELECT_WIDTH }} />
+            <col style={{ width: nameWidth }} />
+            {columns.map((c) => (
+              <col key={c.id} style={{ width: c.width }} />
+            ))}
+            <col style={{ width: ACTIONS_WIDTH }} />
+            {/* Auto-width filler. Under `table-fixed` the leftover space goes to
+                the columns without a width, so on a wide screen — or in live
+                mode, where the rate-card columns have no data to show — the
+                table still spans the page without stretching Segment Name. */}
+            <col />
+          </colgroup>
+          <thead>
+            <tr>
+              <Th pinned left={0}>
+                <Checkbox
+                  checked={allChecked}
+                  indeterminate={someChecked && !allChecked}
+                  onChange={onToggleAll}
+                  label="Select all segments"
+                />
+              </Th>
+              <Th
+                pinned
+                left={SELECT_WIDTH}
+                divider
+                compact={compact}
+                sortKey="name"
+                sort={sort}
+                direction={direction}
+                onSort={onSort}
+              >
+                Segment Name
+              </Th>
+              {columns.map((c) => (
+                <Th
+                  key={c.id}
+                  compact={compact}
+                  sortKey={c.sortKey}
+                  sort={sort}
+                  direction={direction}
+                  onSort={onSort}
                 >
-                  {flexRender(header.column.columnDef.header, header.getContext())}
-                  {sortable && isActive && (
-                    <span className="ml-1 text-[9px] text-indigo">
-                      {direction === 'asc' ? '▲' : '▼'}
-                    </span>
+                  {headerFor(c)}
+                </Th>
+              ))}
+              {/* Sits under the floating gear. */}
+              <Th />
+              <Th />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s) => {
+              const isActive = s.id === activeSegmentId
+              return (
+                <tr
+                  key={s.id}
+                  onClick={() => onOpenSegment?.(s.id)}
+                  className={cn(
+                    'group cursor-pointer transition-colors',
+                    isActive
+                      ? 'bg-green-mint/60 shadow-[inset_0_1.5px_0_#00A05A,inset_0_-1.5px_0_#00A05A]'
+                      : 'hover:bg-[#FAFBFC]',
                   )}
-                </th>
+                >
+                  <Td pinned left={0} active={isActive}>
+                    <Checkbox
+                      checked={selected.has(s.id)}
+                      onChange={() => onToggleRow(s.id)}
+                      label={`Select ${s.name}`}
+                    />
+                  </Td>
+                  <Td pinned left={SELECT_WIDTH} divider active={isActive}>
+                    <div
+                      className={cn(
+                        'flex items-baseline gap-1 overflow-hidden leading-[1.35] text-ink',
+                        compact ? 'text-[12.5px]' : 'text-[13.5px]',
+                      )}
+                      title={s.fullPath}
+                    >
+                      <span className="min-w-0 shrink truncate text-[#6B7280]">
+                        {compact ? compactPrefix(s.pathPrefix) : s.pathPrefix}
+                      </span>
+                      <span className="min-w-0 max-w-full shrink-0 truncate">
+                        {s.name}
+                      </span>
+                    </div>
+                    <RowLabels segment={s} tags={tagsById?.get(s.id)} />
+                  </Td>
+                  {columns.map((c) => (
+                    <Td key={c.id} compact={compact} active={isActive}>
+                      {c.cell(s)}
+                    </Td>
+                  ))}
+                  <Td active={isActive}>
+                    <RowMenu
+                      open={menuRow === s.id}
+                      onOpenChange={(o) => setMenuRow(o ? s.id : null)}
+                      visible={isActive || menuRow === s.id}
+                      onViewFullDetails={
+                        onViewFullDetails && (() => onViewFullDetails(s.id))
+                      }
+                      segmentId={s.id}
+                    />
+                  </Td>
+                </tr>
               )
             })}
-          </tr>
-        ))}
-      </thead>
-      <tbody>
-        {table.getRowModel().rows.map((row) => (
-          <tr
-            key={row.id}
-            onClick={() => navigate(`/segments/${row.original.id}`)}
-            className="cursor-pointer transition-colors hover:bg-[#FAFBFC]"
-          >
-            {row.getVisibleCells().map((cell) => (
-              <td
-                key={cell.id}
-                className={cn(
-                  'border-b border-line2 px-2.5 py-3 align-top text-[13.5px]',
-                  compact && 'text-[12.5px]',
-                )}
+          </tbody>
+        </table>
+      </div>
+
+      {estimatedShown.length > 0 && (
+        <p className="mt-2 text-[11.5px] leading-[1.5] text-muted2">
+          {estimatedShown.join(', ')}{' '}
+          {estimatedShown.length === 1 ? 'is an estimate' : 'are estimates'} derived
+          from delivered usage — the catalog API does not report{' '}
+          {estimatedShown.length === 1 ? 'it' : 'them'}.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Performance labels and Segment Intelligence tags under a segment name.
+ *
+ * Both families are drawn short and capped at two each: full-length badges wrap
+ * onto a line each in the pinned column and multiply the height of every row.
+ * Segments average about five tags, so most rows overflow. Everything over the
+ * caps rolls into a single count — one "+N" per row, never two — and the detail
+ * panel lists them all.
+ */
+const MAX_ROW_BADGES = 2
+const MAX_ROW_TAGS = 2
+
+function RowLabels({ segment, tags }: { segment: Segment; tags?: SegmentTag[] }) {
+  const named = segment.labels.filter((l) => l !== 'proven_multi_platform')
+  const multi = segment.labels.length !== named.length
+  const shownLabels = named.slice(0, multi ? MAX_ROW_BADGES - 1 : MAX_ROW_BADGES)
+
+  // Already sorted by priority in `src/api/tags.ts`, so this is the strongest N.
+  const shownTags = tags?.slice(0, MAX_ROW_TAGS) ?? []
+  const hidden =
+    named.length - shownLabels.length + ((tags?.length ?? 0) - shownTags.length)
+
+  if (segment.labels.length === 0 && shownTags.length === 0) return null
+
+  return (
+    <div className="mt-[7px] flex flex-wrap items-center gap-1.5">
+      {shownLabels.map((l) => (
+        <LabelBadge key={l} label={l} short />
+      ))}
+      {multi && <PlatformBadge count={segment.platformCount} />}
+      {shownTags.map((t) => (
+        <TagChip key={t.key} tag={t} />
+      ))}
+      {hidden > 0 && (
+        <span className="text-[11px] font-semibold text-muted2">+{hidden}</span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Header cell. `pinned` freezes the cell against the left edge of the scroller
+ * at `left`; `divider` draws the seam between the pinned block and the metrics.
+ */
+function Th({
+  children,
+  pinned,
+  left,
+  divider,
+  compact,
+  sortKey,
+  sort,
+  direction,
+  onSort,
+}: {
+  children?: React.ReactNode
+  pinned?: boolean
+  left?: number
+  divider?: boolean
+  compact?: boolean
+  sortKey?: SortKey
+  sort?: SortKey
+  direction?: 'asc' | 'desc'
+  onSort?: (key: SortKey) => void
+}) {
+  const sortable = Boolean(sortKey && onSort)
+  return (
+    <th
+      style={pinned ? { left } : undefined}
+      className={cn(
+        'border-b-[1.5px] border-[#C9CDD3] bg-white px-2.5 py-3 text-left align-bottom text-[12.5px] font-bold leading-[1.25] text-[#202124]',
+        compact && 'text-[11.5px]',
+        pinned && 'sticky z-20',
+        divider && 'border-r border-r-line',
+        sortable && 'cursor-pointer select-none hover:text-indigo-ink',
+      )}
+      onClick={sortable ? () => onSort!(sortKey!) : undefined}
+    >
+      {children}
+      {sortable && sort === sortKey && (
+        <span className="ml-1 text-[9px] text-indigo">
+          {direction === 'asc' ? '▲' : '▼'}
+        </span>
+      )}
+    </th>
+  )
+}
+
+function Td({
+  children,
+  pinned,
+  left,
+  divider,
+  compact,
+  active,
+}: {
+  children?: React.ReactNode
+  pinned?: boolean
+  left?: number
+  divider?: boolean
+  compact?: boolean
+  active?: boolean
+}) {
+  return (
+    <td
+      style={pinned ? { left } : undefined}
+      className={cn(
+        'border-b border-line2 px-2.5 py-3 align-top text-[13.5px] tabular-nums',
+        compact && 'text-[12.5px]',
+        // A pinned cell scrolls over the metrics, so it needs its own opaque
+        // background — including the row states, which would otherwise show
+        // through only on the scrolling half of the row.
+        pinned && 'sticky z-10',
+        pinned && (active ? 'bg-[#DDF6E9]' : 'bg-white group-hover:bg-[#FAFBFC]'),
+        divider && 'border-r border-r-line',
+      )}
+    >
+      {children}
+    </td>
+  )
+}
+
+function ColumnPicker({
+  visible,
+  onChange,
+  reachMeasured,
+}: {
+  visible: Set<string>
+  onChange: (next: Set<string>) => void
+  /** Reach is measured, so those columns are no longer tagged "estimated". */
+  reachMeasured: boolean
+}) {
+  const toggle = (id: string) => {
+    const next = new Set(visible)
+    // At least one metric column has to stay on, or the header row collapses to
+    // the pinned segment name with nothing to scroll.
+    if (next.has(id)) {
+      if (next.size === 1) return
+      next.delete(id)
+    } else {
+      next.add(id)
+    }
+    onChange(next)
+  }
+
+  return (
+    <Popover.Root>
+      <Popover.Trigger
+        aria-label="Choose columns"
+        className="absolute right-0 top-1.5 z-30 flex h-6 w-6 items-center justify-center rounded bg-white text-[15px] text-[#3C4043] hover:text-indigo-ink"
+      >
+        ⚙
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="end"
+          sideOffset={6}
+          className="z-50 w-[260px] rounded-lg border border-line bg-white p-3 shadow-pop"
+        >
+          <div className="sec-label mb-2">Columns</div>
+          <div className="flex flex-col gap-0.5">
+            {AVAILABLE_COLUMNS.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => toggle(c.id)}
+                className="flex items-center gap-2.5 rounded px-1.5 py-[6px] text-left text-[13px] hover:bg-line2"
               >
-                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-              </td>
+                <Checkbox
+                  checked={visible.has(c.id)}
+                  onChange={() => toggle(c.id)}
+                  label={c.header}
+                />
+                <span className="flex-1">{c.header}</span>
+                {!c.hasData ? (
+                  <span className="text-[11px] text-muted2">no data</span>
+                ) : c.catalogAttribute &&
+                  ESTIMATED_CATALOG_METRICS &&
+                  !(reachMeasured && c.reachMetric) ? (
+                  <span className="text-[11px] text-muted2">estimated</span>
+                ) : null}
+              </button>
             ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+          </div>
+          <p className="mt-2 border-t border-line2 pt-2 text-[11.5px] text-muted2">
+            Segment Name stays pinned to the left while these scroll.
+          </p>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
+
+function RowMenu({
+  open,
+  onOpenChange,
+  visible,
+  onViewFullDetails,
+  segmentId,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  visible: boolean
+  onViewFullDetails?: () => void
+  segmentId: string
+}) {
+  return (
+    <Popover.Root open={open} onOpenChange={onOpenChange}>
+      <Popover.Trigger
+        aria-label="Segment actions"
+        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          'flex h-6 w-6 items-center justify-center rounded text-[15px] leading-none text-[#3C4043] hover:bg-line2',
+          visible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+        )}
+      >
+        …
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="end"
+          sideOffset={4}
+          onClick={(e) => e.stopPropagation()}
+          className="z-50 w-[210px] rounded-lg border border-line bg-white p-1.5 shadow-pop"
+        >
+          {onViewFullDetails && (
+            <MenuItem
+              onClick={() => {
+                onOpenChange(false)
+                onViewFullDetails()
+              }}
+            >
+              View full details
+            </MenuItem>
+          )}
+          <MenuItem
+            onClick={() => {
+              navigator.clipboard?.writeText(segmentId)
+              onOpenChange(false)
+            }}
+          >
+            Copy segment ID
+          </MenuItem>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
+
+function MenuItem({
+  children,
+  onClick,
+}: {
+  children: React.ReactNode
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="block w-full rounded px-2.5 py-2 text-left text-[13px] hover:bg-line2"
+    >
+      {children}
+    </button>
   )
 }
 

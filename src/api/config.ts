@@ -55,3 +55,33 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 export const MOCK_LATENCY_MS = Number(
   import.meta.env.VITE_MOCK_LATENCY_MS ?? 250,
 )
+
+/* ---------- Segment Intelligence API (tags) ---------- */
+
+/**
+ * Tags come from a second backend, not the catalog API. It serves the tag
+ * vocabulary and the per-segment tag assignments; everything else the app shows
+ * still comes from `API_BASE_URL`. "/tags-api/v1" routes through the Vite dev
+ * proxy (see vite.config.ts), which strips /tags-api and forwards to
+ * VITE_TAGS_ORIGIN.
+ */
+export const TAGS_API_BASE_URL =
+  import.meta.env.VITE_TAGS_API_BASE_URL ?? '/tags-api/v1'
+
+/**
+ * Tags enrich the live catalog, so there is nothing to fetch them for in mock
+ * mode. Set VITE_TAGS_ENABLED=false to turn them off in live mode too.
+ */
+export const TAGS_ENABLED =
+  import.meta.env.VITE_TAGS_ENABLED !== 'false' && apiModeFor('segments') === 'live'
+
+/**
+ * The Segment Intelligence API reports real cookie/iOS/Android reach and input
+ * record counts, which the catalog adapter currently synthesises. Adopting them
+ * needs a row-level `GET /v1/segments/{id}`, which the API does not serve yet —
+ * so this stays off until it does. `src/api/tags.ts` treats a 404 as "no data"
+ * and falls back, so flipping it on early degrades rather than breaks.
+ */
+export const TAGS_REACH_ENABLED =
+  TAGS_ENABLED && import.meta.env.VITE_TAGS_REACH === 'true'
+
