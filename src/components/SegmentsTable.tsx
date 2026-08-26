@@ -13,6 +13,7 @@ import { LabelBadge, PlatformBadge } from './Badge'
 import { ScoreBar } from './ScoreBar'
 import { DestinationDots } from './DestinationDots'
 import { formatDate, formatReach } from '@/lib/labels'
+import { METRIC_LABELS, SHOW_DATE_ADDED } from '@/lib/metricLabels'
 import { cn } from '@/lib/cn'
 
 const col = createColumnHelper<Segment>()
@@ -94,7 +95,7 @@ export function SegmentsTable({
 
     const cpcCol = col.accessor('cpc', {
       id: 'cpc',
-      header: 'CPC',
+      header: compact ? METRIC_LABELS.cpcShort : METRIC_LABELS.cpc,
       meta: { sortKey: 'cpc' as SortKey, width: compact ? '60px' : '7%' },
       cell: (ctx) => `$${ctx.getValue().toFixed(2)}`,
     })
@@ -136,23 +137,28 @@ export function SegmentsTable({
       }),
       col.accessor('advertiserDirectPctOfMedia', {
         id: 'pctMedia',
-        header: 'Advertiser Direct % of Media',
+        header: METRIC_LABELS.pctMedia,
         meta: { width: '9%' },
         cell: (ctx) => `${ctx.getValue()}%`,
       }),
       cpcCol,
       col.accessor('cookieReach', {
         id: 'cookieReach',
-        header: 'Cookie Reach',
+        header: METRIC_LABELS.reach,
         meta: { sortKey: 'cookie_reach' as SortKey, width: '9%' },
         cell: (ctx) => formatReach(ctx.getValue()),
       }),
-      col.accessor('dateAdded', {
-        id: 'dateAdded',
-        header: 'Date Added',
-        meta: { sortKey: 'date_added' as SortKey, width: '9%' },
-        cell: (ctx) => formatDate(ctx.getValue()),
-      }),
+      // The live catalog carries no creation date, so there is nothing to show.
+      ...(SHOW_DATE_ADDED
+        ? [
+            col.accessor('dateAdded', {
+              id: 'dateAdded',
+              header: 'Date Added',
+              meta: { sortKey: 'date_added' as SortKey, width: '9%' },
+              cell: (ctx) => formatDate(ctx.getValue()),
+            }),
+          ]
+        : []),
     ]
   }, [compact, rows, selected, onToggleAll, onToggleRow])
 

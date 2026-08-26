@@ -1,14 +1,7 @@
 import type { SegmentFacets, SegmentQuery, SortKey } from '@/api/types'
-import { LABEL_META, DESTINATION_META } from '@/lib/labels'
+import { LABEL_META, destinationName } from '@/lib/labels'
+import { SORT_OPTIONS } from '@/lib/metricLabels'
 import type { DestinationId, PerformanceLabel } from '@/api/types'
-
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: 'marketplace_score', label: 'Marketplace performance' },
-  { value: 'cpc', label: 'CPC' },
-  { value: 'cookie_reach', label: 'Cookie reach' },
-  { value: 'date_added', label: 'Date added' },
-  { value: 'name', label: 'Segment name' },
-]
 
 interface FilterChipsProps {
   query: SegmentQuery
@@ -37,7 +30,7 @@ export function FilterChips({
     ...(query.destinations ?? []).map((d: DestinationId) => ({
       key: 'destinations' as const,
       value: d,
-      text: `Proven on ${DESTINATION_META[d].name}`,
+      text: `Proven on ${destinationName(d)}`,
     })),
     ...(query.sellers ?? []).map((s) => ({
       key: 'sellers' as const,

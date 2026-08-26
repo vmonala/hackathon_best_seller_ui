@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import type { SegmentDetail } from '@/api/types'
 import { LabelBadge } from './Badge'
 import { UsageSparkline } from './UsageSparkline'
-import { DESTINATION_META, USAGE_TEXT, formatDate } from '@/lib/labels'
+import { destinationMeta, USAGE_TEXT, formatDate } from '@/lib/labels'
+import { DestinationChip } from './DestinationDots'
 import { renderBold } from '@/lib/markdown'
 
 export function PerformanceTab({ segment }: { segment: SegmentDetail }) {
@@ -46,13 +47,14 @@ export function PerformanceTab({ segment }: { segment: SegmentDetail }) {
 
         <h5 className="sec-label mt-[22px]">Where it delivers</h5>
         {p.destinations.map((d) => {
-          const meta = DESTINATION_META[d.destination]
+          const meta = destinationMeta(d.destination)
           return (
             <div
               key={d.destination}
               className="flex items-center justify-between border-b border-line2 py-2.5 text-[12.5px]"
             >
-              <span>
+              <span className="flex items-center gap-2">
+                <DestinationChip destination={d.destination} size={17} />
                 <b>{meta.name}</b>
                 {d.channel && ` · ${d.channel}`}
               </span>

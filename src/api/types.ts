@@ -15,7 +15,8 @@ export type PerformanceLabel =
   | 'proven_multi_platform'
   | 'new_gaining_traction'
 
-export type DestinationId =
+/** Destinations the UI ships hand-drawn styling for. */
+export type KnownDestinationId =
   | 'facebook'
   | 'snapchat'
   | 'tiktok'
@@ -23,6 +24,14 @@ export type DestinationId =
   | 'linkedin'
   | 'pinterest'
   | 'x'
+
+/**
+ * The backend delivers on far more platforms than the seven above, and the
+ * list grows without a UI release. So any platform slug is a valid
+ * destination; the ones we know get bespoke styling, the rest are rendered
+ * from a generated glyph and colour. See `src/lib/labels.ts`.
+ */
+export type DestinationId = KnownDestinationId | (string & {})
 
 export type UsageLevel = 'very_high' | 'high' | 'moderate' | 'low'
 
@@ -156,6 +165,14 @@ export interface AiRecommendation {
   why: string
 }
 
+export interface AiDiscoveryCitation {
+  /** Origin label, e.g. "activation.md" or "BigQuery:best_sellers" */
+  source: string
+  text: string
+  /** 0-1; SQL results use 1.0 */
+  score: number
+}
+
 export interface AiDiscoveryResponse {
   id: string
   question: string
@@ -165,6 +182,14 @@ export interface AiDiscoveryResponse {
   /** IDs of every segment considered, used to narrow the left-hand table */
   candidateSegmentIds: string[]
   totalCandidates: number
+  /** SQL the agent executed, when it took the Text2SQL route */
+  sqlUsed?: string
+  /** Agent self-assessed confidence, 0-1 */
+  confidence?: number
+  /** Classified intent that drove the agent's routing */
+  intent?: string
+  /** Evidence fragments the answer cites */
+  sources?: AiDiscoveryCitation[]
 }
 
 /* ---------- Data Seller Insights ---------- */

@@ -7,6 +7,15 @@ import type {
   SortKey,
 } from '@/api/types'
 
+export const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const
+
+const DEFAULT_PAGE_SIZE = 25
+
+function parsePageSize(raw: string | null): number {
+  const n = Number(raw)
+  return (PAGE_SIZE_OPTIONS as readonly number[]).includes(n) ? n : DEFAULT_PAGE_SIZE
+}
+
 /**
  * Keeps all filter/sort state in the URL so views are shareable and the
  * back button works. This is the single source of truth for the list page.
@@ -24,7 +33,7 @@ export function useSegmentQueryParams() {
       sort: (params.get('sort') as SortKey | null) ?? 'marketplace_score',
       direction: (params.get('dir') as 'asc' | 'desc' | null) ?? 'desc',
       page: Math.max(1, Number(params.get('page')) || 1),
-      pageSize: 25,
+      pageSize: parsePageSize(params.get('size')),
     }),
     [params],
   )
@@ -49,8 +58,14 @@ export function useSegmentQueryParams() {
           setMulti('status', patch.statuses)
           if (patch.sort) next.set('sort', patch.sort)
           if (patch.direction) next.set('dir', patch.direction)
+          if (patch.pageSize !== undefined) {
+            patch.pageSize === DEFAULT_PAGE_SIZE
+              ? next.delete('size')
+              : next.set('size', String(patch.pageSize))
+          }
 
-          // Any filter change resets pagination.
+          // Any change other than the page itself resets pagination — including
+          // a new page size, where the old offset would land somewhere random.
           if (patch.page !== undefined) next.set('page', String(patch.page))
           else next.delete('page')
 
