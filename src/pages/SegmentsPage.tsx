@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAskDiscovery, useFacets, useSegments } from '@/api/queries'
-import type { SortKey } from '@/api/types'
+import { useAskDiscovery, useFacets, useSegmentIntel, useSegments } from '@/api/queries'
+import type { SegmentTag, SortKey } from '@/api/types'
 import { useSegmentQueryParams } from '@/lib/useSegmentQueryParams'
 import { FilterBar } from '@/components/FilterBar'
 import { FilterChips } from '@/components/FilterChips'
@@ -46,12 +46,34 @@ export function SegmentsPage() {
   const showingAiResults =
     discoveryOpen && Boolean(aiCandidateIds && aiCandidateIds.length > 0)
 
-  const rows = useMemo(() => {
+  const pageRows = useMemo(() => {
     const items = data?.items ?? []
     if (!showingAiResults) return items
     const ids = new Set(aiCandidateIds)
     return items.filter((s) => ids.has(s.id))
   }, [data?.items, showingAiResults, aiCandidateIds])
+
+  // Tags (and, when enabled, measured reach) come from the Segment Intelligence
+  // API — a second backend, fetched per visible row after the table has painted.
+  const rowIds = useMemo(() => pageRows.map((s) => s.id), [pageRows])
+  const { data: intel } = useSegmentIntel(rowIds)
+
+  const tagsById = useMemo(() => {
+    const map = new Map<string, SegmentTag[]>()
+    intel?.forEach((v, id) => map.set(id, v.tags))
+    return map
+  }, [intel])
+
+  // Measured reach replaces the figures the catalog adapter derives. Off unless
+  // VITE_TAGS_REACH is set and the API serves the row route, so this is usually
+  // the identity mapping.
+  const rows = useMemo(() => {
+    if (!intel) return pageRows
+    return pageRows.map((s) => {
+      const reach = intel.get(s.id)?.reach
+      return reach ? { ...s, ...reach, reachMeasured: true } : s
+    })
+  }, [pageRows, intel])
 
   const toggleRow = useCallback((id: string) => {
     setSelected((prev) => {
@@ -175,6 +197,7 @@ export function SegmentsPage() {
             onOpenSegment={openSegment}
             activeSegmentId={activeSegmentId}
             onViewFullDetails={(id) => navigate(`/segments/${id}`)}
+            tagsById={tagsById}
           />
         )}
 
@@ -197,7 +220,7 @@ export function SegmentsPage() {
           {!showingAiResults && activeFilterCount > 0 && data && (
             <span className="text-muted2">
               · filtered from {formatNumber(data.totalBeforeLabelFilters ?? data.totalUnfiltered)}{' '}
-              by performance labels
+              by performance filters
             </span>
           )}
           {selected.size > 0 && (

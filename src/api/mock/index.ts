@@ -68,10 +68,16 @@ export function filterSellerSegments(query: SellerSegmentQuery): SellerSegment[]
 }
 
 export const mockApi = {
-  async listSegments(query: SegmentQuery): Promise<Paginated<Segment>> {
+  async listSegments(
+    query: SegmentQuery,
+    tagIds?: ReadonlySet<string> | null,
+  ): Promise<Paginated<Segment>> {
     await delay()
     return {
-      ...runSegmentQuery(MOCK_SEGMENTS, query),
+      // Tags come from a live-only service, so `tagIds` is null under fixtures
+      // and the tag filter is not offered — it is honoured here regardless so
+      // the two adapters stay interchangeable.
+      ...runSegmentQuery(MOCK_SEGMENTS, query, tagIds ?? null),
       // The fixtures stand in for a much larger catalogue, so the footer
       // totals come from the scenario rather than from the 12 rows on hand.
       totalUnfiltered: MOCK_CATALOG_TOTALS.catalogTotal,

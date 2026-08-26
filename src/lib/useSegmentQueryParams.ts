@@ -7,6 +7,9 @@ import type {
   SortKey,
 } from '@/api/types'
 
+/** The multi-select filters, keyed as they are on `SegmentQuery`. */
+export type FilterKey = 'labels' | 'tags' | 'destinations' | 'sellers' | 'statuses'
+
 export const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const
 
 const DEFAULT_PAGE_SIZE = 25
@@ -27,6 +30,7 @@ export function useSegmentQueryParams() {
     () => ({
       search: params.get('q') ?? '',
       labels: params.getAll('label') as PerformanceLabel[],
+      tags: params.getAll('tag'),
       destinations: params.getAll('dest') as DestinationId[],
       sellers: params.getAll('seller'),
       statuses: params.getAll('status'),
@@ -55,6 +59,7 @@ export function useSegmentQueryParams() {
             patch.search ? next.set('q', patch.search) : next.delete('q')
           }
           setMulti('label', patch.labels)
+          setMulti('tag', patch.tags)
           setMulti('dest', patch.destinations)
           setMulti('seller', patch.sellers)
           setMulti('status', patch.statuses)
@@ -80,7 +85,7 @@ export function useSegmentQueryParams() {
   )
 
   const toggleIn = useCallback(
-    (key: 'labels' | 'destinations' | 'sellers' | 'statuses', value: string) => {
+    (key: FilterKey, value: string) => {
       const current: string[] = query[key] ?? []
       const next = current.includes(value)
         ? current.filter((v) => v !== value)
@@ -89,6 +94,9 @@ export function useSegmentQueryParams() {
       switch (key) {
         case 'labels':
           update({ labels: next as PerformanceLabel[] })
+          break
+        case 'tags':
+          update({ tags: next })
           break
         case 'destinations':
           update({ destinations: next as DestinationId[] })
@@ -108,8 +116,11 @@ export function useSegmentQueryParams() {
     setParams(new URLSearchParams(), { replace: true })
   }, [setParams])
 
+  // What "More Filters" counts: the three facets that live behind it.
   const activeFilterCount =
-    (query.labels?.length ?? 0) + (query.destinations?.length ?? 0)
+    (query.labels?.length ?? 0) +
+    (query.tags?.length ?? 0) +
+    (query.destinations?.length ?? 0)
 
   return { query, update, toggleIn, clearAll, activeFilterCount }
 }

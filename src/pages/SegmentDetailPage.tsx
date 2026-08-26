@@ -1,7 +1,8 @@
 import * as Tabs from '@radix-ui/react-tabs'
 import { Link, useParams } from 'react-router-dom'
-import { useSegment } from '@/api/queries'
+import { useSegment, useSegmentIntel } from '@/api/queries'
 import { LabelBadge, TextBadge } from '@/components/Badge'
+import { TagChips } from '@/components/TagChip'
 import { PerformanceTab } from '@/components/PerformanceTab'
 import { DestinationChip, DestinationDots } from '@/components/DestinationDots'
 import {
@@ -22,7 +23,17 @@ const TABS = [
 
 export function SegmentDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const { data: segment, isLoading, isError, error } = useSegment(id)
+  const { data: raw, isLoading, isError, error } = useSegment(id)
+  const { data: intel } = useSegmentIntel(id ? [id] : [])
+  const entry = id ? intel?.get(id) : undefined
+  // Measured reach, when the tags API supplies it, replaces the derived figures.
+  // Tags ride along on the segment so the Performance tab can explain them.
+  const segment =
+    raw && {
+      ...raw,
+      tags: entry?.tags,
+      ...(entry?.reach && { ...entry.reach, reachMeasured: true }),
+    }
 
   if (isLoading) {
     return (
@@ -64,7 +75,13 @@ export function SegmentDetailPage() {
           <h2 className="my-[7px] mb-2.5 text-[23px] font-bold tracking-[-0.3px]">
             {segment.fullPath}
           </h2>
-          <div className="flex flex-wrap items-center gap-1.5">
+          {/* Every tag, uncapped — the table shows only the strongest two. */}
+          {entry?.tags?.length ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <TagChips tags={entry.tags} />
+            </div>
+          ) : null}
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             {segment.labels
               .filter((l) => l !== 'proven_multi_platform')
               .map((l) => (

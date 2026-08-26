@@ -1,17 +1,30 @@
-import { useEffect, useState } from 'react'
-import type { SegmentFacets, SegmentQuery } from '@/api/types'
+import { useEffect, useMemo, useState } from 'react'
+import type { FacetOption, SegmentFacets, SegmentQuery } from '@/api/types'
 import type { DestinationId, PerformanceLabel } from '@/api/types'
+import { useTagVocabulary } from '@/api/queries'
+import { TAGS_ENABLED } from '@/api/config'
+import type { FilterKey } from '@/lib/useSegmentQueryParams'
+import { tagIcon } from '@/lib/labels'
 import { FacetDropdown } from './FacetDropdown'
 import { cn } from '@/lib/cn'
+
+/**
+ * Performance labels and segment tags read as one list — both answer "how has
+ * this segment actually done" — but they come from different backends and
+ * different query keys, so their option values are namespaced.
+ */
+const LABEL_PREFIX = 'label:'
+const TAG_PREFIX = 'tag:'
+
+const PERFORMANCE_HINT = TAGS_ENABLED
+  ? 'Labels are earned from delivered usage across LiveRamp destinations over the last 90 days; tags are awarded from catalogue-wide cut-offs on distribution, reach and platform breadth. Picking more labels widens the results; picking more tags narrows them.'
+  : 'Labels are earned from delivered usage across LiveRamp destinations over the last 90 days. Updated weekly.'
 
 interface FilterBarProps {
   query: SegmentQuery
   facets?: SegmentFacets
   onUpdate: (patch: Partial<SegmentQuery>) => void
-  onToggle: (
-    key: 'labels' | 'destinations' | 'sellers' | 'statuses',
-    value: string,
-  ) => void
+  onToggle: (key: FilterKey, value: string) => void
   activeFilterCount: number
   onOpenDiscovery: () => void
   compact?: boolean
@@ -27,6 +40,46 @@ export function FilterBar({
   compact,
 }: FilterBarProps) {
   const [search, setSearch] = useState(query.search ?? '')
+
+  // Tags are the Segment Intelligence API's vocabulary, not a catalog facet, so
+  // they arrive on their own and are absent in mock mode.
+  const { data: tags, isLoading: tagsLoading } = useTagVocabulary()
+
+  /**
+   * Labels and tags share one heading in the dropdown but live on different
+   * query keys, so each option carries the key it belongs to as a prefix and
+   * `togglePerformance` routes it back. Labels come first — they are the
+   * catalog's own vocabulary — with the tags service's badges beneath them.
+   */
+  const performanceOptions = useMemo<FacetOption[]>(
+    () => [
+      ...(facets?.performanceLabels ?? []).map((o) => ({
+        ...o,
+        value: `${LABEL_PREFIX}${o.value}`,
+      })),
+      ...(TAGS_ENABLED ? (tags ?? []) : []).map((t) => ({
+        value: `${TAG_PREFIX}${t.key}`,
+        label: `${tagIcon(t)} ${t.name}`,
+        // No count: the tags service counts over its own ~198k-row catalog,
+        // which is not the set this table pages through.
+        hint: t.description,
+      })),
+    ],
+    [facets?.performanceLabels, tags],
+  )
+
+  const performanceSelected = useMemo(
+    () => [
+      ...(query.labels ?? []).map((l) => `${LABEL_PREFIX}${l}`),
+      ...(query.tags ?? []).map((t) => `${TAG_PREFIX}${t}`),
+    ],
+    [query.labels, query.tags],
+  )
+
+  const togglePerformance = (value: string) =>
+    value.startsWith(TAG_PREFIX)
+      ? onToggle('tags', value.slice(TAG_PREFIX.length))
+      : onToggle('labels', value.slice(LABEL_PREFIX.length) as PerformanceLabel)
 
   // Debounce typing so we do not refetch on every keystroke.
   useEffect(() => {
@@ -123,10 +176,11 @@ export function FilterBar({
           sections={[
             {
               title: 'Marketplace performance',
-              hint: 'Labels are earned from delivered usage across LiveRamp destinations over the last 90 days. Updated weekly.',
-              options: facets?.performanceLabels ?? [],
-              selected: query.labels ?? [],
-              onToggle: (v) => onToggle('labels', v as PerformanceLabel),
+              hint: PERFORMANCE_HINT,
+              options: performanceOptions,
+              loading: tagsLoading,
+              selected: performanceSelected,
+              onToggle: togglePerformance,
             },
             {
               title: 'Proven on destination',
@@ -136,7 +190,7 @@ export function FilterBar({
               onToggle: (v) => onToggle('destinations', v as DestinationId),
             },
           ]}
-          onClearAll={() => onUpdate({ labels: [], destinations: [] })}
+          onClearAll={() => onUpdate({ labels: [], tags: [], destinations: [] })}
         />
       )}
 

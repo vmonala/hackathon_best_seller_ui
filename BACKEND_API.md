@@ -640,3 +640,76 @@ VITE_FASTAPI_ORIGIN=http://localhost:8000
 
 The yellow "mock data" banner at the top of the app disappears when live mode is
 active — that is the quickest confirmation the switch worked.
+
+---
+
+## 9. Segment Intelligence API (tags) — a second service
+
+Tags are **not** served by the backend documented above. They come from a
+separate service on its own origin, configured with `VITE_TAGS_ORIGIN`
+(default `http://localhost:8001`) and reached through the Vite dev proxy at
+`VITE_TAGS_API_BASE_URL` (default `/tags-api/v1`). Client:
+`src/api/tags.ts` — the only file that talks to it.
+
+### Endpoints used
+
+| Method | Path | Returns | Used by |
+| --- | --- | --- | --- |
+| `GET` | `/v1/tags` | `SegmentTagRow[]` | The tag vocabulary (11 tags today) |
+| `GET` | `/v1/segments/{id}/tags` | `SegmentTagRow[]` | Chips under a segment name |
+| `GET` | `/v1/tags/{slug}/segments` | `TagSegmentsPage` | The tag filter in **More Filters** |
+| `GET` | `/v1/segments/{id}` | `SegmentIntelRow` | **Not implemented yet** — see below |
+
+### `SegmentTagRow`
+
+Snake_case, unlike the camelCase convention in §1 — this service follows its own.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `tag_key` | `string` | Stable slug, e.g. `top_facebook_activated` |
+| `display_name` | `string` | Chip text, e.g. "Top Facebook Activated" |
+| `description` | `string` | **Why** it was awarded, e.g. "Top 10% distributed on Facebook". Shown on hover. |
+| `category` | `string` | `platform` \| `reach` \| `distribution`. Picks the chip tone; unknown values get the neutral tone. |
+| `priority` | `number` | Lower sorts first. The table shows the two lowest and counts the rest. |
+
+### Filtering by tag
+
+The chips run id → tags; the **More Filters** tag facet runs the other way, on
+`GET /v1/tags/{slug}/segments?page=&size=` (size max 200). It pages bare
+`dms_segment_id` numbers and nothing else, so a whole tag is cheap even at the
+top of the range — "Highly Distributed" is 111,480 ids, 558 requests, ~3s and
+~1.3MB measured against the local service; most tags are a fraction of that.
+Each tag's id set is cached for the tab, and selected tags are AND-ed by
+intersecting their sets (`resolveTagFilter`) before the in-memory query runs.
+
+The route's `total_items` counts against this service's ~198k rows, not the
+~14.6k the app renders, so the facet deliberately shows **no count** next to a
+tag rather than a number the result list would contradict.
+
+### Why it is not the catalog source
+
+Its `GET /v1/segments` carries **198,432** rows against the catalog API's
+14,633, and takes only `page` and `size` (max 200) — no search, filter, sort or
+field projection. The whole-catalog load in `src/api/liveCatalog.ts` would
+become ~992 requests and ~830MB. It also drops `impressions`,
+`gross_data_revenue`, `usage_platform_names`, `buyers_with_usage`,
+`popularity_rank` and the usage window, which the metric columns, facets,
+earned labels and the Performance tab are all built on, and has no counterpart
+to `?query=` for AI Discovery.
+
+So the catalog API stays the source of truth and this service enriches it, one
+visible row at a time. `GET /v1/segments/{id}/tags` is 774 bytes and a few
+milliseconds, so a 50-row page costs ~40KB and every id is cached for the tab.
+
+### Wanted: `GET /v1/segments/{id}`
+
+The service reports measured `cookie_reach`, `ios_reach`, `android_reach` and
+`input_records` — figures `src/api/adapters/catalog.ts` currently *derives* from
+delivered usage and flags as estimates. Adopting them needs a row-level fetch,
+and there is none: `/v1/segments/1189` 404s, and the list route ignores `?ids=`
+and `?fields=`.
+
+The client is already written against that route and returns the tags *and* the
+reach in a single response when it answers. Add it and set `VITE_TAGS_REACH=true`;
+until then the flag is off, and turning it on early falls back to the tags route
+on the 404 rather than breaking.

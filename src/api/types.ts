@@ -45,6 +45,23 @@ export interface DestinationDelivery {
   live: boolean
 }
 
+/**
+ * A tag the Segment Intelligence API awarded to a segment. The description is
+ * the *reason* it was awarded, and is what the chip's tooltip shows.
+ */
+export interface SegmentTag {
+  /** Stable slug, e.g. "top_facebook_activated". */
+  key: string
+  /** e.g. "Top Facebook Activated" */
+  name: string
+  /** e.g. "Top 10% distributed on Facebook" */
+  description: string
+  /** "platform" | "reach" | "distribution" — picks the chip tone. */
+  category: string
+  /** Lower sorts first; the table shows the two lowest. */
+  priority: number
+}
+
 export interface Segment {
   id: string
   /** Full path, e.g. "!nsight > Retail > Consumer Electronics > Wearables > Smart Watch Buyers" */
@@ -98,6 +115,18 @@ export interface Segment {
   reachAsOf?: string
   /** ISO date the input record count was measured. */
   inputRecordsAsOf?: string
+  /**
+   * From the tags API, which is a separate service — `undefined` means "not
+   * loaded yet", not "no tags". Rows on the list page get theirs from
+   * `useSegmentTags` rather than through the catalog adapter.
+   */
+  tags?: SegmentTag[]
+  /**
+   * True when the reach figures above are measured values from the Segment
+   * Intelligence API rather than derived from delivered usage. Drives the
+   * column header and the estimates footnote.
+   */
+  reachMeasured?: boolean
 }
 
 export interface EarnedLabelExplanation {
@@ -143,7 +172,15 @@ export interface SegmentDetail extends Segment {
 export interface FacetOption<T extends string = string> {
   value: T
   label: string
-  count: number
+  /**
+   * How many segments carry the value. Optional: the tag facet has no honest
+   * count to show — the Segment Intelligence API counts tags over its own
+   * ~198k-row catalog, not the ~14.6k the app renders — so it omits it and the
+   * dropdown draws no number.
+   */
+  count?: number
+  /** Hover text for the option. Used by the tag facet to carry the tag's reason. */
+  hint?: string
 }
 
 export interface SegmentFacets {
@@ -163,6 +200,12 @@ export type SortKey =
 export interface SegmentQuery {
   search?: string
   labels?: PerformanceLabel[]
+  /**
+   * Tag slugs from the Segment Intelligence API, e.g. "buyer_magnet". AND-ed:
+   * a segment must carry every selected tag. Resolved to segment ids by
+   * `resolveTagFilter` before the query runs — see `src/api/tags.ts`.
+   */
+  tags?: string[]
   destinations?: DestinationId[]
   sellers?: string[]
   statuses?: string[]

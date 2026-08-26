@@ -293,7 +293,7 @@ function deriveFacets(segments: Segment[]): SegmentFacets {
   }
 
   const byCountDesc = <T extends string>(a: FacetOption<T>, b: FacetOption<T>) =>
-    b.count - a.count
+    (b.count ?? 0) - (a.count ?? 0)
 
   return {
     // Only labels the dump can actually award; trending_up and

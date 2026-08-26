@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
 import * as Popover from '@radix-ui/react-popover'
-import type { Segment, SortKey } from '@/api/types'
+import type { Segment, SegmentTag, SortKey } from '@/api/types'
 import { Checkbox } from './Checkbox'
 import { LabelBadge, PlatformBadge } from './Badge'
+import { TagChip } from './TagChip'
 import { DestinationDots } from './DestinationDots'
 import { formatDate, formatReach } from '@/lib/labels'
 import {
   ESTIMATED_CATALOG_METRICS,
   METRIC_LABELS,
+  REAL_REACH_METRICS,
   SHOW_CATALOG_METRICS,
   SHOW_DATE_ADDED,
 } from '@/lib/metricLabels'
@@ -38,6 +40,11 @@ interface MetricColumn {
    * derived stand-in, so they are tagged as estimates wherever they appear.
    */
   catalogAttribute?: boolean
+  /**
+   * Device-level reach or input records — derived today, but measured once the
+   * tags API supplies them, which flips `catalogAttribute` off at render time.
+   */
+  reachMetric?: boolean
   sortKey?: SortKey
   cell: (s: Segment) => React.ReactNode
 }
@@ -106,27 +113,30 @@ const METRIC_COLUMNS: MetricColumn[] = [
     id: 'iosReach',
     header: 'iOS Reach',
     width: 100,
-    hasData: SHOW_CATALOG_METRICS,
-    defaultVisible: SHOW_CATALOG_METRICS,
+    hasData: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
     catalogAttribute: true,
+    reachMetric: true,
     cell: (s) => reach(s.iosReach),
   },
   {
     id: 'androidReach',
     header: 'Android Reach',
     width: 112,
-    hasData: SHOW_CATALOG_METRICS,
-    defaultVisible: SHOW_CATALOG_METRICS,
+    hasData: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
     catalogAttribute: true,
+    reachMetric: true,
     cell: (s) => reach(s.androidReach),
   },
   {
     id: 'inputRecords',
     header: 'Input Records',
     width: 110,
-    hasData: SHOW_CATALOG_METRICS,
-    defaultVisible: SHOW_CATALOG_METRICS,
+    hasData: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
     catalogAttribute: true,
+    reachMetric: true,
     cell: (s) => reach(s.inputRecords),
   },
   {
@@ -182,6 +192,11 @@ interface SegmentsTableProps {
   activeSegmentId?: string | null
   /** "View full details" in the row menu. */
   onViewFullDetails?: (id: string) => void
+  /**
+   * Segment Intelligence tags by segment id. Loads after the rows do, from a
+   * separate backend, so it is optional — the table renders fine without it.
+   */
+  tagsById?: Map<string, SegmentTag[]>
 }
 
 export function SegmentsTable({
@@ -197,6 +212,7 @@ export function SegmentsTable({
   onOpenSegment,
   activeSegmentId,
   onViewFullDetails,
+  tagsById,
 }: SegmentsTableProps) {
   const [visible, setVisible] = useState<Set<string>>(
     () => new Set(AVAILABLE_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id)),
@@ -208,10 +224,20 @@ export function SegmentsTable({
     [visible],
   )
 
+  // Whether the reach figures on screen are measured rather than derived. The
+  // flag only says the app asked; the rows say whether the API answered, and
+  // the header and the footnote have to agree with the numbers underneath them.
+  const reachMeasured = REAL_REACH_METRICS && rows.some((r) => r.reachMeasured)
+
   // Named in the footnote so it is clear which numbers on screen are derived.
   const estimatedShown = ESTIMATED_CATALOG_METRICS
-    ? columns.filter((c) => c.catalogAttribute).map((c) => c.header)
+    ? columns
+        .filter((c) => c.catalogAttribute && !(reachMeasured && c.reachMetric))
+        .map((c) => c.header)
     : []
+
+  const headerFor = (c: MetricColumn) =>
+    reachMeasured && c.id === 'cookieReach' ? METRIC_LABELS.reachMeasured : c.header
 
   const nameWidth = compact ? NAME_WIDTH_COMPACT : NAME_WIDTH
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.id))
@@ -234,7 +260,11 @@ export function SegmentsTable({
     <div className="relative mt-2.5">
       {/* The gear floats above the scroller so it stays reachable at any
           horizontal scroll position, like the mockup. */}
-      <ColumnPicker visible={visible} onChange={setVisible} />
+      <ColumnPicker
+        visible={visible}
+        onChange={setVisible}
+        reachMeasured={reachMeasured}
+      />
 
       <div className="overflow-x-auto">
         {/* border-separate, not border-collapse: a collapsed table drops the
@@ -294,7 +324,7 @@ export function SegmentsTable({
                   direction={direction}
                   onSort={onSort}
                 >
-                  {c.header}
+                  {headerFor(c)}
                 </Th>
               ))}
               {/* Sits under the floating gear. */}
@@ -338,7 +368,7 @@ export function SegmentsTable({
                         {s.name}
                       </span>
                     </div>
-                    <RowLabels segment={s} />
+                    <RowLabels segment={s} tags={tagsById?.get(s.id)} />
                   </Td>
                   {columns.map((c) => (
                     <Td key={c.id} compact={compact} active={isActive}>
@@ -376,28 +406,38 @@ export function SegmentsTable({
 }
 
 /**
- * Performance labels under a segment name.
+ * Performance labels and Segment Intelligence tags under a segment name.
  *
- * Badges are drawn short and capped at two: full-length badges wrap onto a line
- * each in the pinned column and multiply the height of every row. Anything over
- * the cap is counted, and the detail panel lists them all.
+ * Both families are drawn short and capped at two each: full-length badges wrap
+ * onto a line each in the pinned column and multiply the height of every row.
+ * Segments average about five tags, so most rows overflow. Everything over the
+ * caps rolls into a single count — one "+N" per row, never two — and the detail
+ * panel lists them all.
  */
 const MAX_ROW_BADGES = 2
+const MAX_ROW_TAGS = 2
 
-function RowLabels({ segment }: { segment: Segment }) {
-  if (segment.labels.length === 0) return null
-
+function RowLabels({ segment, tags }: { segment: Segment; tags?: SegmentTag[] }) {
   const named = segment.labels.filter((l) => l !== 'proven_multi_platform')
   const multi = segment.labels.length !== named.length
-  const shown = named.slice(0, multi ? MAX_ROW_BADGES - 1 : MAX_ROW_BADGES)
-  const hidden = named.length - shown.length
+  const shownLabels = named.slice(0, multi ? MAX_ROW_BADGES - 1 : MAX_ROW_BADGES)
+
+  // Already sorted by priority in `src/api/tags.ts`, so this is the strongest N.
+  const shownTags = tags?.slice(0, MAX_ROW_TAGS) ?? []
+  const hidden =
+    named.length - shownLabels.length + ((tags?.length ?? 0) - shownTags.length)
+
+  if (segment.labels.length === 0 && shownTags.length === 0) return null
 
   return (
     <div className="mt-[7px] flex flex-wrap items-center gap-1.5">
-      {shown.map((l) => (
+      {shownLabels.map((l) => (
         <LabelBadge key={l} label={l} short />
       ))}
       {multi && <PlatformBadge count={segment.platformCount} />}
+      {shownTags.map((t) => (
+        <TagChip key={t.key} tag={t} />
+      ))}
       {hidden > 0 && (
         <span className="text-[11px] font-semibold text-muted2">+{hidden}</span>
       )}
@@ -490,9 +530,12 @@ function Td({
 function ColumnPicker({
   visible,
   onChange,
+  reachMeasured,
 }: {
   visible: Set<string>
   onChange: (next: Set<string>) => void
+  /** Reach is measured, so those columns are no longer tagged "estimated". */
+  reachMeasured: boolean
 }) {
   const toggle = (id: string) => {
     const next = new Set(visible)
@@ -537,7 +580,9 @@ function ColumnPicker({
                 <span className="flex-1">{c.header}</span>
                 {!c.hasData ? (
                   <span className="text-[11px] text-muted2">no data</span>
-                ) : c.catalogAttribute && ESTIMATED_CATALOG_METRICS ? (
+                ) : c.catalogAttribute &&
+                  ESTIMATED_CATALOG_METRICS &&
+                  !(reachMeasured && c.reachMetric) ? (
                   <span className="text-[11px] text-muted2">estimated</span>
                 ) : null}
               </button>

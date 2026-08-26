@@ -131,9 +131,11 @@ export function TokenMultiSelect({
                   label={opt.label}
                 />
                 <span className="truncate">{opt.label}</span>
-                <span className="ml-auto pl-2 text-[12px] tabular-nums text-muted2">
-                  {formatNumber(opt.count)}
-                </span>
+                {opt.count !== undefined && (
+                  <span className="ml-auto pl-2 text-[12px] tabular-nums text-muted2">
+                    {formatNumber(opt.count)}
+                  </span>
+                )}
               </label>
             ))}
             {!visible.length && (

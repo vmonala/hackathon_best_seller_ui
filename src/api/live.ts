@@ -43,9 +43,12 @@ import type {
  *   GET  /seller/platforms/{id}/segments     -> list[PlatformSegmentRow]
  */
 export const liveApi = {
-  async listSegments(query: SegmentQuery): Promise<Paginated<Segment>> {
+  async listSegments(
+    query: SegmentQuery,
+    tagIds?: ReadonlySet<string> | null,
+  ): Promise<Paginated<Segment>> {
     const catalog = await loadCatalog()
-    return runSegmentQuery(catalog.segments, query)
+    return runSegmentQuery(catalog.segments, query, tagIds ?? null)
   },
 
   async getSegment(id: string): Promise<SegmentDetail> {

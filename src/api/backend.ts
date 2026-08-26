@@ -91,3 +91,65 @@ export interface AgentAnswer {
   query: string
   result: QueryResponse
 }
+
+/* ---------- Segment Intelligence tags API (a second service) ---------- */
+
+/**
+ * Wire shapes for the tags backend — `VITE_TAGS_ORIGIN`, default
+ * http://localhost:8001. Transcribed from its /openapi.json.
+ *
+ *   GET /v1/tags                  -> SegmentTagRow[]     (the whole vocabulary)
+ *   GET /v1/segments/{id}/tags    -> SegmentTagRow[]     (one segment's tags)
+ *   GET /v1/tags/{slug}/segments  -> TagSegmentsPage     (every segment with a tag)
+ */
+export interface SegmentTagRow {
+  /** Stable slug, e.g. "top_facebook_activated". */
+  tag_key: string
+  display_name: string
+  /** Why the tag was awarded, e.g. "Top 10% distributed on Facebook". */
+  description: string
+  /** "platform" | "reach" | "distribution" — treated as open-ended. */
+  category: string
+  /** Lower sorts first. Unique across the vocabulary. */
+  priority: number
+}
+
+/** Paging envelope shared by the tags API's list routes. */
+export interface TagsPageInfo {
+  page: number
+  page_size: number
+  total_items: number
+  total_pages: number
+  has_next: boolean
+  has_previous: boolean
+}
+
+/**
+ * One page of `GET /v1/tags/{slug}/segments` — the reverse lookup that answers
+ * "which segments carry this tag". `items` are raw `dms_segment_id` numbers,
+ * nothing else, which is what makes bulk-loading a tag's whole set affordable.
+ */
+export interface TagSegmentsPage {
+  tag_key: string
+  pagination: TagsPageInfo
+  items: number[]
+}
+
+/**
+ * A catalog row from the tags API. Only the fields the UI would adopt are
+ * transcribed; the row carries considerably more.
+ *
+ * Served today only inside the paged `GET /v1/segments` list — there is no
+ * `GET /v1/segments/{id}`, which is why the reach enrichment that reads this is
+ * behind `TAGS_REACH_ENABLED`.
+ */
+export interface SegmentIntelRow {
+  dms_segment_id: number
+  cookie_reach: number
+  ios_reach: number
+  android_reach: number
+  input_records: number
+  /** ISO timestamp, e.g. "2025-11-07T00:09:15". */
+  cookie_reach_updated_at: string | null
+  tags: SegmentTagRow[]
+}

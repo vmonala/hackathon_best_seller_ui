@@ -1,14 +1,14 @@
 import { useState, type ReactNode } from 'react'
 import * as Tabs from '@radix-ui/react-tabs'
 import { Link } from 'react-router-dom'
-import { useSegment } from '@/api/queries'
+import { useSegment, useSegmentIntel } from '@/api/queries'
 import type { SegmentDetail } from '@/api/types'
 import { LabelBadge } from './Badge'
+import { TagChips, TagExplanations } from './TagChip'
 import { DestinationChip } from './DestinationDots'
 import { UsageSparkline } from './UsageSparkline'
 import { destinationMeta, formatDate, formatNumber, USAGE_TEXT } from '@/lib/labels'
 import { ESTIMATED_CATALOG_METRICS, METRIC_LABELS } from '@/lib/metricLabels'
-import { renderBold } from '@/lib/markdown'
 import { cn } from '@/lib/cn'
 
 interface Props {
@@ -24,7 +24,14 @@ interface Props {
  * straight through to the next segment.
  */
 export function SegmentDetailPanel({ segmentId, onClose }: Props) {
-  const { data: segment, isLoading, isError, error } = useSegment(segmentId)
+  const { data: raw, isLoading, isError, error } = useSegment(segmentId)
+  const { data: intel } = useSegmentIntel([segmentId])
+  // Uncapped here — the sheet has the room the pinned table column does not.
+  const tags = intel?.get(segmentId)?.tags
+
+  // Measured reach, when the tags API supplies it, replaces the derived figures.
+  const reach = intel?.get(segmentId)?.reach
+  const segment = raw && { ...raw, tags, ...(reach && { ...reach, reachMeasured: true }) }
 
   return (
     <aside className="flex w-[580px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white">
@@ -41,6 +48,18 @@ export function SegmentDetailPanel({ segmentId, onClose }: Props) {
             ✕
           </button>
         </div>
+        {tags?.length ? (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <TagChips tags={tags} />
+          </div>
+        ) : null}
+        {segment && segment.labels.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pb-1">
+            {segment.labels.map((l) => (
+              <LabelBadge key={l} label={l} short />
+            ))}
+          </div>
+        )}
       </div>
 
       {isError ? (
@@ -191,19 +210,12 @@ function PanelBody({ segment: s }: { segment: SegmentDetail }) {
 
 function MarketplacePerformance({ segment: s }: { segment: SegmentDetail }) {
   const p = s.performance
-  const earned = p.earnedLabels.filter((e) => e.earned)
 
+  // The earned-label badges that used to head this section now sit in the sheet
+  // header, under the tags.
   return (
     <>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {earned.length ? (
-          earned.map((e) => <LabelBadge key={e.label} label={e.label} short />)
-        ) : (
-          <span className="bdg bdg-ghost">No labels earned yet</span>
-        )}
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-2 gap-2.5">
         <Kpi label="Advertisers (90d)" value={p.advertisersUsing90d} />
         <Kpi
           label="Weeks active"
@@ -235,20 +247,8 @@ function MarketplacePerformance({ segment: s }: { segment: SegmentDetail }) {
         </div>
       ))}
 
-      <h6 className="sec-label mt-4">How it earned its labels</h6>
-      {p.earnedLabels.map((e) => (
-        <div key={e.label} className="flex items-start gap-2.5 border-b border-line2 py-2">
-          <LabelBadge label={e.label} muted={!e.earned} short />
-          <div
-            className={cn(
-              'text-[12px] leading-[1.5]',
-              e.earned ? 'text-muted' : 'text-[#9AA0A6]',
-            )}
-          >
-            {renderBold(e.explanation)}
-          </div>
-        </div>
-      ))}
+      <h6 className="sec-label mt-4">How it earned its tags</h6>
+      <TagExplanations tags={s.tags} />
 
       <h6 className="sec-label mt-4">Evidence quality</h6>
       <Row

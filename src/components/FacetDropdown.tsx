@@ -9,6 +9,8 @@ interface FacetSection {
   title: string
   hint: string
   options: FacetOption[]
+  /** Rendered in place of the options while they are still loading. */
+  loading?: boolean
   selected: string[]
   onToggle: (value: string) => void
 }
@@ -49,11 +51,15 @@ export function FacetDropdown({
                 <p className="mb-[11px] text-[11.5px] leading-[1.4] text-muted2">
                   {section.hint}
                 </p>
+                {section.loading && !section.options.length && (
+                  <p className="py-1.5 text-[12.5px] text-muted2">Loading…</p>
+                )}
                 {section.options.map((opt) => {
                   const checked = section.selected.includes(opt.value)
                   return (
                     <label
                       key={opt.value}
+                      title={opt.hint}
                       className="flex cursor-pointer items-center gap-2.5 py-1.5 text-[13.5px]"
                     >
                       <Checkbox
@@ -62,9 +68,12 @@ export function FacetDropdown({
                         label={opt.label}
                       />
                       <span>{opt.label}</span>
-                      <span className="ml-auto text-[12px] tabular-nums text-muted2">
-                        {formatNumber(opt.count)}
-                      </span>
+                      {/* Facets without an honest count — tags — draw no number. */}
+                      {opt.count !== undefined && (
+                        <span className="ml-auto text-[12px] tabular-nums text-muted2">
+                          {formatNumber(opt.count)}
+                        </span>
+                      )}
                     </label>
                   )
                 })}

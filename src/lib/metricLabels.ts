@@ -1,4 +1,4 @@
-import { apiModeFor } from '@/api/config'
+import { apiModeFor, TAGS_REACH_ENABLED } from '@/api/config'
 import type { SortKey } from '@/api/types'
 
 /**
@@ -10,12 +10,27 @@ import type { SortKey } from '@/api/types'
  */
 const LIVE_SEGMENTS = apiModeFor('segments') === 'live'
 
+/**
+ * Whether the app is *asking* the Segment Intelligence API for measured cookie,
+ * iOS and Android reach and input record counts instead of deriving them from
+ * delivered usage. See `TAGS_REACH_ENABLED` in `src/api/config.ts`.
+ *
+ * Asking is not getting: the row route that serves those figures is not
+ * implemented yet, so with the flag on the request still 404s and the derived
+ * values stand. Whether a header may call the column "Cookie Reach", and
+ * whether the estimates footnote may drop it, therefore keys off
+ * `Segment.reachMeasured` on the rows actually in hand — not off this flag.
+ */
+export const REAL_REACH_METRICS = TAGS_REACH_ENABLED
+
 export const METRIC_LABELS = {
   /** `Segment.cpc` — effective CPM in live mode. */
   cpc: LIVE_SEGMENTS ? 'Effective CPM' : 'CPC',
   cpcShort: LIVE_SEGMENTS ? 'eCPM' : 'CPC',
   /** `Segment.cookieReach` — delivered impressions in live mode. */
   reach: LIVE_SEGMENTS ? 'Impressions Delivered' : 'Cookie Reach',
+  /** What that column is once the tags API supplies measured reach instead. */
+  reachMeasured: 'Cookie Reach',
   /** `Segment.advertiserDirectPctOfMedia` — share of buyers delivering in live mode. */
   pctMedia: LIVE_SEGMENTS ? 'Buyers Delivering' : 'Advertiser Direct % of Media',
 } as const
