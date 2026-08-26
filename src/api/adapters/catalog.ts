@@ -10,6 +10,7 @@ import type {
   SegmentFacets,
   SegmentPerformance,
 } from '../types'
+import { destinationName, registerDestinationName } from '@/lib/labels'
 
 /**
  * Translates `/v1/segments` catalog rows into the `Segment` shape the UI
@@ -41,20 +42,19 @@ const FREQUENTLY_REUSED_PERCENTILE = 0.1
 /** Delivering platforms needed for "proven multi-platform". */
 const MULTI_PLATFORM_MIN = 4
 
-/** Platform names in the payload that map onto a destination the UI can draw. */
-const DESTINATION_BY_PLATFORM: Record<string, DestinationId> = {
-  facebook: 'facebook',
-  snapchat: 'snapchat',
+/**
+ * Platform names that are the same destination under two spellings. Anything
+ * not listed here is *not* dropped — it is slugified into its own destination
+ * so every platform the backend reports reaches the UI.
+ */
+const DESTINATION_ALIASES: Record<string, DestinationId> = {
   snap: 'snapchat',
-  tiktok: 'tiktok',
-  'the trade desk': 'the_trade_desk',
-  linkedin: 'linkedin',
-  pinterest: 'pinterest',
-  x: 'x',
   twitter: 'x',
+  ttd: 'the_trade_desk',
+  'trade desk': 'the_trade_desk',
 }
 
-/** Stable draw order when two destinations are equally strong. */
+/** Stable draw order for the destinations the design names explicitly. */
 const DESTINATION_ORDER: DestinationId[] = [
   'facebook',
   'snapchat',
@@ -96,27 +96,50 @@ function normalisePlatform(name: string) {
   return name.trim().toLowerCase()
 }
 
+/**
+ * Turns a payload platform name into a stable destination id, remembering the
+ * name it came from so the UI can label it. Unknown platforms get a slug of
+ * their own rather than being discarded.
+ */
+function destinationIdFor(name: string): DestinationId | undefined {
+  const normalised = normalisePlatform(name)
+  if (!normalised) return undefined
+
+  const id =
+    DESTINATION_ALIASES[normalised] ??
+    normalised.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  if (!id) return undefined
+
+  registerDestinationName(id, name.trim())
+  return id
+}
+
 function mapDestinations(row: SegmentFeatureRow): DestinationDelivery[] {
   const delivering = new Set<DestinationId>()
   const distributed = new Set<DestinationId>()
 
-  for (const name of row.usage_platform_names) {
-    const id = DESTINATION_BY_PLATFORM[normalisePlatform(name)]
+  for (const name of row.usage_platform_names ?? []) {
+    const id = destinationIdFor(name)
     if (id) delivering.add(id)
   }
-  for (const name of row.active_platform_names) {
-    const id = DESTINATION_BY_PLATFORM[normalisePlatform(name)]
+  for (const name of row.active_platform_names ?? []) {
+    const id = destinationIdFor(name)
     if (id) distributed.add(id)
   }
 
-  const rank = (id: DestinationId) => DESTINATION_ORDER.indexOf(id)
+  // Named destinations keep their designed order; everything else follows,
+  // alphabetically, so the row is stable across renders.
+  const rank = (id: DestinationId) => {
+    const i = DESTINATION_ORDER.indexOf(id)
+    return i === -1 ? DESTINATION_ORDER.length : i
+  }
+  const order = (a: DestinationId, b: DestinationId) =>
+    rank(a) - rank(b) || destinationName(a).localeCompare(destinationName(b))
 
   // Delivering destinations first — that is what the label filters and the
   // "proven on destination" facet key off.
-  const live = [...delivering].sort((a, b) => rank(a) - rank(b))
-  const idle = [...distributed]
-    .filter((id) => !delivering.has(id))
-    .sort((a, b) => rank(a) - rank(b))
+  const live = [...delivering].sort(order)
+  const idle = [...distributed].filter((id) => !delivering.has(id)).sort(order)
 
   return [
     ...live.map<DestinationDelivery>((destination) => ({
@@ -198,7 +221,7 @@ function deriveFacets(segments: Segment[]): SegmentFacets {
       .map((value) => ({ value, label: LABEL_TEXT[value], count: labelCounts.get(value) ?? 0 }))
       .filter((o) => o.count > 0),
     destinations: [...destCounts]
-      .map(([value, count]) => ({ value, label: DESTINATION_TEXT[value], count }))
+      .map(([value, count]) => ({ value, label: destinationName(value), count }))
       .sort(byCountDesc),
     sellers: [...sellerCounts]
       .map(([value, count]) => ({ value, label: value, count }))
@@ -215,16 +238,6 @@ const LABEL_TEXT: Record<PerformanceLabel, string> = {
   trending_up: 'Trending up',
   proven_multi_platform: 'Proven multi-platform',
   new_gaining_traction: 'New & gaining traction',
-}
-
-const DESTINATION_TEXT: Record<DestinationId, string> = {
-  facebook: 'Facebook',
-  snapchat: 'Snapchat',
-  tiktok: 'TikTok',
-  the_trade_desk: 'The Trade Desk',
-  linkedin: 'LinkedIn',
-  pinterest: 'Pinterest',
-  x: 'X',
 }
 
 export function buildCatalog(rows: SegmentFeatureRow[]): LiveCatalog {

@@ -15,7 +15,8 @@ export type PerformanceLabel =
   | 'proven_multi_platform'
   | 'new_gaining_traction'
 
-export type DestinationId =
+/** Destinations the UI ships hand-drawn styling for. */
+export type KnownDestinationId =
   | 'facebook'
   | 'snapchat'
   | 'tiktok'
@@ -23,6 +24,14 @@ export type DestinationId =
   | 'linkedin'
   | 'pinterest'
   | 'x'
+
+/**
+ * The backend delivers on far more platforms than the seven above, and the
+ * list grows without a UI release. So any platform slug is a valid
+ * destination; the ones we know get bespoke styling, the rest are rendered
+ * from a generated glyph and colour. See `src/lib/labels.ts`.
+ */
+export type DestinationId = KnownDestinationId | (string & {})
 
 export type UsageLevel = 'very_high' | 'high' | 'moderate' | 'low'
 

@@ -3,9 +3,9 @@ import { Link, useParams } from 'react-router-dom'
 import { useSegment } from '@/api/queries'
 import { LabelBadge, TextBadge } from '@/components/Badge'
 import { PerformanceTab } from '@/components/PerformanceTab'
-import { DestinationDots } from '@/components/DestinationDots'
+import { DestinationChip, DestinationDots } from '@/components/DestinationDots'
 import {
-  DESTINATION_META,
+  destinationName,
   USAGE_TEXT,
   formatDate,
   formatNumber,
@@ -140,15 +140,16 @@ export function SegmentDetailPage() {
 
           <Tabs.Content value="destinations" className="px-6 py-6">
             <div className="mb-4">
-              <DestinationDots destinations={segment.destinations} max={8} />
+              <DestinationDots destinations={segment.destinations} />
             </div>
             {segment.destinations.map((d) => (
               <div
                 key={d.destination}
                 className="flex items-center justify-between border-b border-line2 py-2.5 text-[12.5px]"
               >
-                <span>
-                  <b>{DESTINATION_META[d.destination].name}</b>
+                <span className="flex items-center gap-2">
+                  <DestinationChip destination={d.destination} size={17} />
+                  <b>{destinationName(d.destination)}</b>
                   {d.channel && ` · ${d.channel}`}
                 </span>
                 <span className="text-muted2">
