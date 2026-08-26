@@ -15,7 +15,7 @@ export function SellerSegmentsTable({ rows, isLoading, onOpen }: Props) {
       <table className="w-full border-collapse bg-white">
         <thead>
           <tr>
-            <Th className="w-[34%]">Segment Name</Th>
+            <Th className="w-[52%]">Segment Name</Th>
             <Th>DMS Segment ID</Th>
             <Th>Segment Type</Th>
             <Th num>
@@ -76,14 +76,14 @@ export function SellerSegmentsTable({ rows, isLoading, onOpen }: Props) {
 }
 
 /**
- * The labels under a segment name, capped at two.
+ * The labels under a segment name, capped at three.
  *
  * Same treatment as the buyer table: a column of its own made every row as tall
  * as its longest label list, so the labels sit under the name and everything
  * past the cap rolls into a count. `labels` is already in priority order, so the
  * cap keeps the strongest; the drawer lists them all with their criteria.
  */
-const MAX_ROW_BADGES = 2
+const MAX_ROW_BADGES = 3
 
 function RowLabels({ labels }: { labels: SellerLabel[] }) {
   const shown = labels.slice(0, MAX_ROW_BADGES)

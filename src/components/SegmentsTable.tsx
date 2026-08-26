@@ -192,8 +192,8 @@ const AVAILABLE_COLUMNS = METRIC_COLUMNS
 
 const SELECT_WIDTH = 34
 /** Pinned name column: full width, and the narrower one used beside a panel. */
-const NAME_WIDTH = 330
-const NAME_WIDTH_COMPACT = 232
+const NAME_WIDTH = 510
+const NAME_WIDTH_COMPACT = 360
 const ACTIONS_WIDTH = 44
 
 interface SegmentsTableProps {
@@ -411,7 +411,7 @@ export function SegmentsTable({
 /**
  * The labels under a segment name.
  *
- * One vocabulary now, drawn short and capped at two badges: full-length badges
+ * One vocabulary now, drawn short and capped at three badges: full-length badges
  * wrap onto a line each in the pinned column and multiply the height of every
  * row. `labels` is already in priority order, so the cap keeps the strongest.
  * Everything over it rolls into a single count, and the detail panel lists them
@@ -421,7 +421,7 @@ export function SegmentsTable({
  * platform count rather than the 4-platform threshold — it is the more useful
  * number.
  */
-const MAX_ROW_BADGES = 2
+const MAX_ROW_BADGES = 3
 
 function RowLabels({ segment }: { segment: Segment }) {
   const shown = segment.labels.slice(0, MAX_ROW_BADGES)
