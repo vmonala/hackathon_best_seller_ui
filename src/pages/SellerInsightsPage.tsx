@@ -12,11 +12,17 @@ import { ChannelCards } from '@/components/seller/ChannelCards'
 import { PlatformGrid } from '@/components/seller/PlatformGrid'
 import { PlatformDrill } from '@/components/seller/PlatformDrill'
 import { SegmentLabelDrawer } from '@/components/seller/SegmentLabelDrawer'
+import { TokenMultiSelect } from '@/components/seller/TokenMultiSelect'
 import { SELLER_FILTER_OPTIONS, SELLER_LABEL_META } from '@/lib/sellerLabels'
+import { categoryOptions, destinationOptions } from '@/lib/sellerFilters'
+import { useSellerPerformanceParams } from '@/lib/useSellerPerformanceParams'
 import { cn } from '@/lib/cn'
 
 type Tab = 'overview' | 'performance'
 type PlatformSort = 'revenue' | 'segments' | 'growth'
+
+/** Frozen so the query key stays referentially stable across renders. */
+const EMPTY_SELLER_QUERY = {} as const
 
 export function SellerInsightsPage() {
   const [params, setParams] = useSearchParams()
@@ -141,11 +147,29 @@ function PerformanceSection({
 }) {
   const { data: platforms, isLoading } = usePlatforms()
   const { data: summary } = useSellerSummary()
+  /* Unfiltered catalogue, used only to derive the category options and counts. */
+  const { data: catalogue } = useSellerSegments(EMPTY_SELLER_QUERY)
   const [openId, setOpenId] = useState<string | null>(null)
   const [sort, setSort] = useState<PlatformSort>('revenue')
+  const {
+    categories,
+    destinations,
+    setCategories,
+    setDestinations,
+    clearAll,
+    filterCount,
+  } = useSellerPerformanceParams()
+
+  const categoryOpts = useMemo(
+    () => categoryOptions(catalogue?.items),
+    [catalogue?.items],
+  )
+  const destinationOpts = useMemo(() => destinationOptions(platforms), [platforms])
 
   const sorted = useMemo(() => {
-    const list = [...(platforms ?? [])]
+    const list = (platforms ?? []).filter(
+      (p) => !destinations.length || destinations.includes(p.id),
+    )
     return list.sort((a, b) => {
       switch (sort) {
         case 'segments':
@@ -157,8 +181,9 @@ function PerformanceSection({
           return b.revenueLastMonth - a.revenueLastMonth
       }
     })
-  }, [platforms, sort])
+  }, [platforms, sort, destinations])
 
+  // A drill-down stays open only while its platform survives the filter.
   const openPlatform = sorted.find((p) => p.id === openId) ?? null
 
   return (
@@ -174,8 +199,28 @@ function PerformanceSection({
 
       <div className="mb-3 mt-1 text-[17px] font-bold">Performance by Platform</div>
       <div className="mb-3.5 flex flex-wrap items-center gap-3">
-        <FilterGroup label="Categories" tokens={['Custom', 'Health & Wellness']} more={451} />
-        <FilterGroup label="Destinations" tokens={['Amazon', 'Facebook']} more={6} />
+        <TokenMultiSelect
+          label="Categories"
+          hint="Narrows the segments listed inside each platform drill-down. Platform totals stay as reported."
+          options={categoryOpts}
+          selected={categories}
+          onChange={setCategories}
+        />
+        <TokenMultiSelect
+          label="Destinations"
+          hint="Show only the platforms you select."
+          options={destinationOpts}
+          selected={destinations}
+          onChange={setDestinations}
+        />
+        {filterCount > 0 && (
+          <button
+            onClick={clearAll}
+            className="text-[12.5px] text-indigo hover:underline"
+          >
+            Clear {filterCount} filter{filterCount === 1 ? '' : 's'}
+          </button>
+        )}
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as PlatformSort)}
@@ -189,54 +234,27 @@ function PerformanceSection({
 
       {isLoading && !platforms ? (
         <p className="text-[13px] text-muted2">Loading platforms…</p>
-      ) : (
+      ) : sorted.length ? (
         <PlatformGrid
           platforms={sorted}
           openId={openId}
           onToggle={(id) => setOpenId((cur) => (cur === id ? null : id))}
         />
+      ) : (
+        <p className="text-[13px] text-muted2">
+          No platforms match the selected destinations.
+        </p>
       )}
 
       {openPlatform && (
         <PlatformDrill
           platform={openPlatform}
+          categories={categories}
           onClose={() => setOpenId(null)}
           onOpenSegment={onOpenSegment}
         />
       )}
     </section>
-  )
-}
-
-/**
- * The category and destination pickers are wired to the segment catalogue in
- * the buyer-side filter bar; here they show the current scope only.
- */
-function FilterGroup({
-  label,
-  tokens,
-  more,
-}: {
-  label: string
-  tokens: string[]
-  more: number
-}) {
-  return (
-    <div className="flex min-h-[38px] flex-wrap items-center gap-[7px] rounded-[5px] border border-[#C9CDD3] bg-white px-2.5 py-[5px]">
-      <span className="text-[11px] text-muted2">{label}</span>
-      {tokens.map((t) => (
-        <span
-          key={t}
-          className="inline-flex items-center gap-1.5 rounded-[13px] bg-[#EEF0F2] px-2.5 py-0.5 text-[12px]"
-        >
-          {t}
-          <span className="text-[10px] text-muted2">✕</span>
-        </span>
-      ))}
-      <span className="inline-flex items-center rounded-[13px] bg-[#EEF0F2] px-2.5 py-0.5 text-[12px]">
-        +{more} more
-      </span>
-    </div>
   )
 }
 
