@@ -304,7 +304,7 @@ const TOPICS: Topic[] = [
       (s) =>
         `Scores ${s.marketplaceScore} on a ${(s.dataSourceMethod ?? 'declared').toLowerCase()} file${
           s.inputRecords ? ` of ${fmtM(s.inputRecords)} records` : ''
-        }, resolving to ${fmtM(s.cookieReach)} cookies — last refreshed ${s.dateLastRefreshed ?? 'on the seller cadence'}.`,
+        }, resolving to ${fmtM(s.cookieReach)} cookies — last refreshed ${s.dateLastRefreshed ? formatDate(s.dateLastRefreshed) : 'on the seller cadence'}.`,
       (s, picks) =>
         `Lowest score of the three at ${s.marketplaceScore}, but ${
           picks.every((p) => p.cookieReach <= s.cookieReach)
