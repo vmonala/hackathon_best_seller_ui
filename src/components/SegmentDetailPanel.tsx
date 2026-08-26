@@ -97,12 +97,12 @@ function PanelBody({ segment: s }: { segment: SegmentDetail }) {
         <SellerWordmark seller={s.seller} />
 
         <div className="mt-5 space-y-2.5">
-          <Section title="Configuration">
+          <Section title="Configuration" defaultOpen={false}>
             <Stacked label="Segment Name" value={s.fullPath} />
             <Stacked label="Description" value={s.description ?? '-'} />
           </Section>
 
-          <Section title="Asset Overview">
+          <Section title="Asset Overview" defaultOpen={false}>
             <Row label="Segment Type" value={s.segmentType ?? '-'} />
             <Row label="Segment ID" value={s.id} />
             <Row label="Date Added" value={formatDate(s.dateAdded)} />
@@ -304,8 +304,17 @@ function SellerWordmark({ seller }: { seller: string }) {
   )
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  const [open, setOpen] = useState(true)
+function Section({
+  title,
+  children,
+  defaultOpen = true,
+}: {
+  title: string
+  children: ReactNode
+  /** Collapsed on open when false — for the long declared-metadata blocks. */
+  defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
   return (
     <section className="rounded-md border border-line">
       <button

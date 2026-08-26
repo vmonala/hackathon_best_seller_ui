@@ -411,37 +411,36 @@ export function SegmentsTable({
 /**
  * The labels under a segment name.
  *
- * One vocabulary now, drawn short and capped: full-length badges wrap onto a
- * line each in the pinned column and multiply the height of every row.
- * `labels` is already in priority order, so the cap keeps the strongest.
+ * One vocabulary now, drawn short and capped at two badges: full-length badges
+ * wrap onto a line each in the pinned column and multiply the height of every
+ * row. `labels` is already in priority order, so the cap keeps the strongest.
  * Everything over it rolls into a single count, and the detail panel lists them
  * all with the reason each was awarded.
  *
- * `active_platforms` is drawn last and as `PlatformBadge`, which names the
- * segment's own platform count rather than the 4-platform threshold — it is the
- * more useful number, and it does not count against the cap because it is the
- * one badge on nearly every row.
+ * `active_platforms` is drawn as `PlatformBadge`, which names the segment's own
+ * platform count rather than the 4-platform threshold — it is the more useful
+ * number.
  */
-const MAX_ROW_BADGES = 3
+const MAX_ROW_BADGES = 2
 
 function RowLabels({ segment }: { segment: Segment }) {
-  const multi = segment.labels.includes('active_platforms')
-  const named = segment.labels.filter((l) => l !== 'active_platforms')
-  const shown = named.slice(0, MAX_ROW_BADGES)
-  const hidden = named.length - shown.length
+  const shown = segment.labels.slice(0, MAX_ROW_BADGES)
+  const hidden = segment.labels.length - shown.length
 
   if (segment.labels.length === 0) return null
 
   return (
     <div className="mt-[7px] flex flex-wrap items-center gap-1.5">
-      {shown.map((l) => (
-        <LabelBadge key={l} label={l} short reason={segment.labelReasons[l]} />
-      ))}
-      {multi && (
-        <PlatformBadge
-          count={segment.platformCount}
-          reason={segment.labelReasons.active_platforms}
-        />
+      {shown.map((l) =>
+        l === 'active_platforms' ? (
+          <PlatformBadge
+            key={l}
+            count={segment.platformCount}
+            reason={segment.labelReasons.active_platforms}
+          />
+        ) : (
+          <LabelBadge key={l} label={l} short reason={segment.labelReasons[l]} />
+        ),
       )}
       {hidden > 0 && (
         <span className="text-[11px] font-semibold text-muted2">+{hidden}</span>
