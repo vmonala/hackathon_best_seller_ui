@@ -30,13 +30,14 @@ import { SYNTHETIC_CATALOG_METRICS } from '@/lib/metricLabels'
  *   - `platformCount` and `destinations` come from `active_platforms` and
  *     `active_platform_names`, sized by `reach_by_platform`.
  *
- * Delivered impressions and the date the segment was added are on the row too —
- * `impressions_90d`, `impressions_prior_90d`, `added_at` — but they are
- * generated for the fixture rather than captured, which is where the
- * impressions and lifecycle labels read from. See the docblock in
+ * Delivered impressions, the commercial figures and the date the segment was
+ * added are on the row too — `impressions_90d`, `impressions_prior_90d`,
+ * `media_spend_90d`, `marketplace_revenue_90d`, `added_at` — but they are
+ * generated for the fixture rather than captured, which is where the spend,
+ * revenue, impressions and lifecycle labels read from. See the docblock in
  * `mock/catalogRows.ts`.
  *
- * What the feed carries *no* signal for at all is revenue. So:
+ * What the feed carries *no* signal for at all is pricing. So:
  *
  *   - `cpc` and `advertiserDirectPctOfMedia` are **derived stand-ins**, not
  *     measurements. See `synthesiseCatalogAttributes`.
@@ -44,18 +45,22 @@ import { SYNTHETIC_CATALOG_METRICS } from '@/lib/metricLabels'
  *     lives in a different system, so `status` is always 'available'.
  *
  * Labels come off the row's own `label_keys`, which the fixture computed from
- * catalogue-wide cut-offs. What this module adds is the *reason* each one was
+ * catalogue-wide and per-cohort cut-offs. What this module adds is the *reason* each one was
  * awarded to a given segment, quoting that segment's numbers — see
  * `explainLabel`. The cut-offs it quotes need every row in hand, which is why
  * mapping happens in `buildCatalog` rather than per row.
  */
 
-/** Top-N percentile cut-off the `best_seller` and `top_impressions` labels use. */
-const TOP_DECILE = 0.1
+/** Top-N percentile cut-off the spend, revenue and impressions labels use. */
+const TOP_PERCENTILE = 0.05
 /** Active platforms needed for the `active_platforms` label. */
 const MULTI_PLATFORM_MIN = 4
+/** Buyers a segment needs for `best_seller` and `new_addition_trending`. */
+const MIN_BUYERS = 5
 /** How recently a segment must have been added to count as new. */
 const NEW_WINDOW_DAYS = 90
+/** How long a segment must have gone unused before it reads as dormant. */
+const DORMANT_AFTER_DAYS = 182
 /** The date the catalogue's `added_at` values and the new window are measured against. */
 const CATALOG_AS_OF = '2026-08-26'
 
@@ -106,12 +111,43 @@ export interface LiveCatalog {
  * on a chip can quote the number the segment had to beat.
  */
 export interface LabelThresholds {
-  /** Active buyers the top decile of the catalogue starts at. */
-  bestSellerMinBuyers: number
-  /** 90-day impressions the top decile starts at. */
+  /** Catalogue-wide media spend the top 5% starts at. */
+  topSpendMin: number
+  /** Per-cohort cut-offs, keyed by the cohort name `cohortOf` returns. */
+  cohorts: Map<string, CohortThresholds>
+}
+
+/** The cut-offs inside one category cohort, and how big that cohort is. */
+export interface CohortThresholds {
+  /** Segments in the cohort, i.e. what the 5% was taken over. */
+  size: number
+  /** 90-day Marketplace revenue the cohort's top 5% starts at. */
+  bestSellerMinRevenue: number
+  /** 90-day impressions the cohort's top 5% starts at. */
   topImpressionsMin: number
-  /** The catalogue's median 90-day impressions, which "trending" is measured against. */
-  medianImpressions: number
+}
+
+/**
+ * The peer group a segment is measured against: its two-token taxonomy branch,
+ * e.g. "Retail > Consumer Electronics". Ranking a wearables segment against the
+ * whole catalogue would mostly measure how big its category is; ranking it
+ * against its own branch measures the segment.
+ */
+export function cohortOf(fullPath: string): string {
+  const t = pathTokens(fullPath)
+  return [t[1] ?? t[0] ?? 'Uncategorised', t[2]].filter(Boolean).join(' > ')
+}
+
+/**
+ * The value that starts the top `pct` of a distribution, rounding the cut up so
+ * a small cohort still awards one winner rather than none.
+ */
+function topCut(values: number[], pct: number): number {
+  const positive = values.filter((v) => v > 0)
+  if (!positive.length) return Number.POSITIVE_INFINITY
+  const sorted = [...positive].sort((a, b) => b - a)
+  const cut = Math.min(sorted.length, Math.max(1, Math.ceil(values.length * pct)))
+  return sorted[cut - 1]
 }
 
 function splitPath(fullPath: string) {
@@ -474,15 +510,39 @@ export function buildCatalog(
 
   const cookieReaches = ordered.map((r) => r.cookie_reach)
   const buyerCounts = ordered.map((r) => r.active_buyers)
-  const impressions = ordered.map((r) => r.impressions_90d)
 
-  // The cut-offs the fixture awarded `best_seller` and `top_impressions` from,
-  // recomputed here so a reason can quote the number the segment had to beat.
-  // Same rows, same percentile function, so they agree by construction.
+  // The cut-offs the fixture awarded the percentile labels from, recomputed here
+  // so a reason can quote the number the segment had to beat. Same rows, same
+  // cohorts, same percentile function, so they agree by construction.
+  const byCohort = new Map<string, SegmentFeatureRow[]>()
+  for (const row of ordered) {
+    const cohort = cohortOf(row.segment_name)
+    const group = byCohort.get(cohort)
+    if (group) group.push(row)
+    else byCohort.set(cohort, [row])
+  }
+
   const thresholds: LabelThresholds = {
-    bestSellerMinBuyers: percentileThreshold(buyerCounts, 1 - TOP_DECILE),
-    topImpressionsMin: percentileThreshold(impressions, 1 - TOP_DECILE),
-    medianImpressions: percentileThreshold(impressions, 0.5),
+    topSpendMin: topCut(
+      ordered.map((r) => r.media_spend_90d),
+      TOP_PERCENTILE,
+    ),
+    cohorts: new Map(
+      [...byCohort].map(([cohort, group]) => [
+        cohort,
+        {
+          size: group.length,
+          bestSellerMinRevenue: topCut(
+            group.map((r) => r.marketplace_revenue_90d),
+            TOP_PERCENTILE,
+          ),
+          topImpressionsMin: topCut(
+            group.map((r) => r.impressions_90d),
+            TOP_PERCENTILE,
+          ),
+        },
+      ]),
+    ),
   }
 
   const byId = new Map<string, { segment: Segment; row: SegmentFeatureRow }>()
@@ -529,17 +589,10 @@ export function buildCatalog(
   }
 }
 
-/** Value at `q` (0–1) through the sorted-ascending distribution. */
-function percentileThreshold(values: number[], q: number): number {
-  if (!values.length) return Number.POSITIVE_INFINITY
-  const sorted = [...values].sort((a, b) => a - b)
-  const idx = Math.min(sorted.length - 1, Math.floor(q * (sorted.length - 1)))
-  return sorted[idx]
-}
-
 /* ---------- Why a label was awarded ---------- */
 
 const num = (n: number) => n.toLocaleString('en-US')
+const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`
 const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many)
 
 /** Whole days between two ISO dates, `to` minus `from`. */
@@ -551,10 +604,10 @@ function daysBetween(from: string, to: string) {
 /**
  * Why *this* segment earned *this* label, in the segment's own numbers.
  *
- * The vocabulary's `description` states the criteria — "in the top 10% by
- * active buyers". This is the other half: what the segment actually scored
- * against that cut-off. A buyer looking at a chip wants "10 buyers have it
- * enabled, and the top decile starts at 10", not the rule restated.
+ * The vocabulary's `description` states the criteria — "top 5% of its cohort by
+ * Marketplace revenue". This is the other half: what the segment actually scored
+ * against that cut-off. A buyer looking at a chip wants "$9,400 of revenue, and
+ * its cohort's top 5% starts at $4,120", not the rule restated.
  *
  * Markdown bold is used the same way the rest of the drawer copy uses it; the
  * renderers here strip or bold it.
@@ -568,30 +621,27 @@ export function explainLabel(
   const platforms = row.active_platforms
   const impressions = row.impressions_90d
   const age = daysBetween(row.added_at, CATALOG_AS_OF)
+  const cohort = cohortOf(row.segment_name)
+  const cuts = t.cohorts.get(cohort)
 
   switch (label) {
-    case 'top_performance':
-      return `Among the catalogue's **most-reached** segments — reach rank **${num(row.reach_rank)}**, on **${num(row.cookie_reach)}** cookies.`
+    case 'top_campaign_spend':
+      return `**${usd(row.media_spend_90d)}** of media ran against this segment in the last 90 days — the catalogue's **top 5%** starts at ${usd(t.topSpendMin)}. Buyers are putting real budget behind it, not just testing it.`
 
     case 'best_seller':
-      return `**${num(buyers)}** ${plural(buyers, 'buyer')} ${plural(buyers, 'has', 'have')} this segment enabled — the catalogue's **top 10%** starts at ${num(t.bestSellerMinBuyers)}.`
+      return `**${usd(row.marketplace_revenue_90d)}** of Marketplace revenue over 90 days, across **${num(buyers)}** ${plural(buyers, 'buyer')} — the **top 5%** of ${cohort} starts at ${usd(cuts?.bestSellerMinRevenue ?? 0)}.`
 
-    case 'top_impressions':
-      return `**${num(impressions)}** impressions delivered in the last 90 days — the catalogue's **top 10%** starts at ${num(t.topImpressionsMin)}.`
+    case 'most_impressions':
+      return `**${num(impressions)}** impressions delivered in the last 90 days — the **top 5%** of ${cohort} starts at ${num(cuts?.topImpressionsMin ?? 0)}. It matches well at the destination.`
 
     case 'active_platforms':
       return `Distributed to **${num(platforms)} ${plural(platforms, 'platform')}** — ${row.active_platform_names.slice(0, 3).join(', ')}${platforms > 3 ? ` and ${num(platforms - 3)} more` : ''} — at or above the **${MULTI_PLATFORM_MIN} platform** threshold.`
 
     case 'new_addition_trending':
-      return `Added **${num(age)} days ago** and already delivering **${num(impressions)}** impressions — above the catalogue median of ${num(t.medianImpressions)} in its first 90 days.`
-
-    case 'newly_added':
-      return `Added to the marketplace **${num(age)} days ago**, inside the **${NEW_WINDOW_DAYS}-day** window. It has delivered ${num(impressions)} impressions so far.`
+      return `Added **${num(age)} days ago**, inside the **${NEW_WINDOW_DAYS}-day** window, and already picked up by **${num(buyers)}** ${plural(buyers, 'buyer')}.`
 
     case 'dormant':
-      return row.impressions_prior_90d
-        ? `**No impressions** in the last 90 days, down from **${num(row.impressions_prior_90d)}** in the 90 before — still distributed to ${num(platforms)} ${plural(platforms, 'platform')}.`
-        : `**No impressions** in the last 90 days, despite being distributed to ${num(platforms)} ${plural(platforms, 'platform')}.`
+      return `Added **${num(age)} days ago** and **not running on any platform** — no impressions in the last 90 days${row.impressions_prior_90d ? `, down from ${num(row.impressions_prior_90d)} in the 90 before` : ''}.`
   }
 }
 
@@ -602,7 +652,8 @@ export function explainLabel(
  * earned it, and why — or, when it did not, how far short it fell.
  *
  * Showing the misses matters as much as showing the hits. "Not a best seller,
- * 6 buyers against a cut-off of 10" tells a buyer where the segment sits;
+ * $1,900 of revenue against a cohort cut-off of $4,120" tells a buyer where the
+ * segment sits;
  * omitting the row tells them nothing.
  */
 function earnedLabels(
@@ -616,23 +667,26 @@ function earnedLabels(
   const impressions = row.impressions_90d
   const age = daysBetween(row.added_at, CATALOG_AS_OF)
 
+  const cohort = cohortOf(row.segment_name)
+  const cuts = t.cohorts.get(cohort)
+
   const missed: Record<SegmentLabel, string> = {
-    top_performance: `Not earned: reach rank **${num(row.reach_rank)}** is outside the catalogue's top tier by cookie reach.`,
-    best_seller: `Not earned: **${num(buyers)}** ${plural(buyers, 'buyer')} ${plural(buyers, 'has', 'have')} it enabled, below the **top 10%** cut-off of ${num(t.bestSellerMinBuyers)}.`,
-    top_impressions: `Not earned: **${num(impressions)}** impressions in the last 90 days, below the **top 10%** cut-off of ${num(t.topImpressionsMin)}.`,
+    top_campaign_spend: row.media_spend_90d
+      ? `Not earned: **${usd(row.media_spend_90d)}** of media ran against it, below the catalogue's **top 5%** cut-off of ${usd(t.topSpendMin)}.`
+      : `Not earned: **no media** has run against it in the last 90 days.`,
+    best_seller:
+      buyers < MIN_BUYERS
+        ? `Not earned: **${num(buyers)}** ${plural(buyers, 'buyer')}, below the **${MIN_BUYERS}-buyer** floor — it earned ${usd(row.marketplace_revenue_90d)} of Marketplace revenue over 90 days.`
+        : `Not earned: **${usd(row.marketplace_revenue_90d)}** of Marketplace revenue over 90 days, below the **top 5%** of ${cohort}, which starts at ${usd(cuts?.bestSellerMinRevenue ?? 0)}.`,
+    most_impressions: `Not earned: **${num(impressions)}** impressions in the last 90 days, below the **top 5%** of ${cohort}, which starts at ${num(cuts?.topImpressionsMin ?? 0)}.`,
     active_platforms: `Not earned: distributed to **${num(platforms)} ${plural(platforms, 'platform')}**, below the **${MULTI_PLATFORM_MIN} platform** threshold.`,
     new_addition_trending:
       age > NEW_WINDOW_DAYS
         ? `Not earned: added **${num(age)} days ago**, outside the **${NEW_WINDOW_DAYS}-day** new window.`
-        : `Not earned: added ${num(age)} days ago, but **${num(impressions)}** impressions is below the catalogue median of ${num(t.medianImpressions)}.`,
-    // Inside the window but not carrying this label means the segment earned
-    // the trending variant instead — the two are mutually exclusive, so
-    // "outside the window" would be plainly wrong here.
-    newly_added:
-      age <= NEW_WINDOW_DAYS
-        ? `Not earned: added ${num(age)} days ago, but it delivers above the catalogue median, so it carries **New addition and Trending** instead.`
-        : `Not earned: added **${num(age)} days ago**, outside the **${NEW_WINDOW_DAYS}-day** window.`,
-    dormant: `Not earned, which is the good outcome here: **${num(impressions)}** impressions delivered in the last 90 days.`,
+        : `Not earned: added ${num(age)} days ago, but **${num(buyers)}** ${plural(buyers, 'buyer')} is below the **${MIN_BUYERS}-buyer** floor.`,
+    dormant: impressions
+      ? `Not earned, which is the good outcome here: **${num(impressions)}** impressions delivered in the last 90 days.`
+      : `Not earned: it has delivered nothing, but was added **${num(age)} days ago** — inside the **${DORMANT_AFTER_DAYS}-day** window a new segment gets to pick up delivery.`,
   }
 
   return catalog.vocabulary.map((definition) => {

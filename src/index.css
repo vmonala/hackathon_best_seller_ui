@@ -39,7 +39,7 @@
   }
 
   /* Lifecycle and attention labels, which the mockup's five tones did not
-     cover: "Newly Added" reads as informational, "Dormant" as a quiet
+     cover: "Newly Added & Trending" reads as informational, "Dormant" as a quiet
      caution rather than an error — a dormant segment is a fact about
      delivery, not a fault. */
   .bdg-fresh {

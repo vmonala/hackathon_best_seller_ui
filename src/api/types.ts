@@ -18,19 +18,17 @@
  * `Segment.labelReasons`).
  */
 export type SegmentLabel =
-  /** Among the catalogue's most-reached segments. */
-  | 'top_performance'
-  /** Top 10% of the catalogue by active buyers. */
+  /** Top 5% of the catalogue by media spend running against the segment. */
+  | 'top_campaign_spend'
+  /** Top 5% of its category cohort by 90-day Marketplace revenue, 5+ buyers. */
   | 'best_seller'
-  /** Top 10% of the catalogue by impressions delivered in the last 90 days. */
-  | 'top_impressions'
+  /** Top 5% of its category cohort by impressions delivered in the last 90 days. */
+  | 'most_impressions'
   /** Distributed to four or more ad platforms. */
   | 'active_platforms'
-  /** Added in the last 90 days, already delivering at or above the median. */
+  /** Added in the last 90 days, with 5 or more buyers already on it. */
   | 'new_addition_trending'
-  /** Added in the last 90 days. */
-  | 'newly_added'
-  /** Distributed, but delivered nothing in the last 90 days. */
+  /** Added more than 6 months ago and not running on any platform. */
   | 'dormant'
 
 /** Destinations the UI ships hand-drawn styling for. */
@@ -76,7 +74,7 @@ export interface LabelDefinition {
   key: SegmentLabel
   /** e.g. "Best seller" */
   name: string
-  /** e.g. "In the top 10% of the catalogue by active buyers (10+ buyers…)" */
+  /** e.g. "Top 5% of its category cohort by Marketplace revenue over 90 days" */
   description: string
   /** Picks the chip tone. See `SegmentLabelRow.category`. */
   category: string
@@ -99,7 +97,7 @@ export interface Segment {
   labels: SegmentLabel[]
   /**
    * Why *this* segment earned each of the labels above, with its own numbers in
-   * it — "10 buyers have it enabled; the top 10% starts at 10". Shown on the
+   * it — "$9,400 of revenue; its cohort's top 5% starts at $4,120". Shown on the
    * chip tooltip and in the "How it earned its labels" breakdown. Keyed by
    * label; a label present in `labels` always has an entry.
    */
@@ -244,6 +242,8 @@ export interface SegmentFacets {
 }
 
 export type SortKey =
+  /** Groups segments carrying the same labels together, strongest set first. */
+  | 'labels'
   | 'marketplace_score'
   | 'cpc'
   | 'cookie_reach'

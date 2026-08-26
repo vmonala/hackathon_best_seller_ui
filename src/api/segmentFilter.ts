@@ -1,3 +1,4 @@
+import { LABEL_ORDER } from '@/lib/labels'
 import type { Paginated, Segment, SegmentQuery } from './types'
 
 /**
@@ -54,12 +55,51 @@ function matchesLabelFilters(segment: Segment, query: SegmentQuery) {
   return true
 }
 
+const labelRank = new Map(LABEL_ORDER.map((l, i) => [l, i]))
+
+/**
+ * Compares two segments by their label *set*, so segments that earned the same
+ * labels land next to each other.
+ *
+ * The set is read as a priority-ordered vector — a segment carrying
+ * `[best_seller, active_platforms]` compares as `[1, 3]` — and the vectors are
+ * compared position by position, exactly the way a version number is. That puts
+ * every "best seller + multi-platform" row in one block, the next combination
+ * in the block below, and segments with no labels at the end regardless of
+ * direction: a "no labels" group at the top of the default view would bury the
+ * whole point of the page.
+ *
+ * Where the vectors agree up to the length of the shorter one, the longer set
+ * ranks first — more labels earned is the stronger row.
+ */
+function compareLabelSets(a: Segment, b: Segment) {
+  if (!a.labels.length || !b.labels.length) {
+    return a.labels.length === b.labels.length ? 0 : a.labels.length ? -1 : 1
+  }
+  const rank = (l: string) => labelRank.get(l as never) ?? LABEL_ORDER.length
+  for (let i = 0; i < Math.min(a.labels.length, b.labels.length); i++) {
+    const diff = rank(a.labels[i]) - rank(b.labels[i])
+    if (diff) return diff
+  }
+  return b.labels.length - a.labels.length
+}
+
 function sortSegments(rows: Segment[], query: SegmentQuery): Segment[] {
-  const { sort = 'marketplace_score', direction = 'desc' } = query
+  const { sort = 'labels', direction = 'desc' } = query
   const dir = direction === 'asc' ? 1 : -1
 
   return [...rows].sort((a, b) => {
     switch (sort) {
+      case 'labels': {
+        // `desc` — the default — reads strongest label set first, and `asc`
+        // flips the blocks. Either way the unlabelled block stays last, and
+        // rows inside a block read strongest-first, which is what makes a
+        // block scannable.
+        const grouped = compareLabelSets(a, b)
+        if (!grouped) return b.marketplaceScore - a.marketplaceScore
+        const bothLabelled = a.labels.length > 0 && b.labels.length > 0
+        return bothLabelled && direction === 'asc' ? -grouped : grouped
+      }
       case 'cpc':
         return (a.cpc - b.cpc) * dir
       case 'cookie_reach':

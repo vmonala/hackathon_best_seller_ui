@@ -15,7 +15,7 @@ You do **not** need a backend to run it. It ships with bundled fixtures, boots s
 
 A catalogue table answers *what exists*. A buyer is asking *what works*. Those need different data and different filter semantics.
 
-Labels are **OR-ed** — ticking *Top performance* and *Best seller* widens the result set, because the facet counts are independent and a buyer ticking two labels means "either is fine". Destinations are **AND-ed** — "proven on Facebook *and* Snapchat" is the actual activation question, and a destination only counts when it is genuinely delivering (`live: true`), not merely distributed.
+Labels are **OR-ed** — ticking *Best seller* and *Top campaign spend* widens the result set, because the facet counts are independent and a buyer ticking two labels means "either is fine". Destinations are **AND-ed** — "proven on Facebook *and* Snapchat" is the actual activation question, and a destination only counts when it is genuinely delivering (`live: true`), not merely distributed.
 
 That asymmetry is the product, not an implementation detail. The backend must mirror it exactly or the counts stop agreeing with the rows.
 
@@ -439,21 +439,20 @@ Because three columns carry a different metric than the fixtures do, `src/lib/me
 
 ### The label vocabulary
 
-One flat vocabulary — there is no separate "tag" family. Seven labels, awarded from catalogue-wide cut-offs, priority order:
+One flat vocabulary — there is no separate "tag" family. Six labels, awarded from catalogue-wide and per-cohort cut-offs, priority order. A **cohort** is the segment's two-token taxonomy branch (`Retail > Consumer Electronics`, `Health & Fitness > Connected Devices`, …), so a segment is ranked against comparable segments rather than against the whole catalogue:
 
 | Label | Earned when | Rows (of 68) |
 |---|---|---|
-| **Top performance** | Among the catalogue's most-reached segments | 17 |
-| **Best seller** | Top 10% by active buyers (≥ 10 buyers) | 8 |
-| **Top 10% by Impressions** | Top 10% by impressions delivered in the last 90 days | 8 |
-| **Activated in N platforms** | Distributed to ≥ 4 platforms; the badge names the segment's own count | 52 |
-| **New addition and Trending** | Added in the last 90 days, already at or above the catalogue's median impressions | 6 |
-| **Newly Added** | Added in the last 90 days | 5 |
-| **Dormant** | Distributed, but no impressions in the last 90 days | 7 |
+| **$ Top campaign spend** | Top 5% by media spend running against the segment — buyers are putting real budget behind it, not just testing it | 4 |
+| **★ Best seller** | Top 5% of its category cohort by Marketplace revenue over 90 days, with ≥ 5 buyers | 8 |
+| **◤ Most impressions** | Top 5% by delivered impressions in its cohort — high delivery relative to reach means it matches well at the destination | 8 |
+| **✕ Active on 4+ platforms** | Distributed to ≥ 4 platforms; the badge names the segment's own count | 52 |
+| **▲ Newly Added & Trending** | Added in the last 90 days, with ≥ 5 buyers already on it | 5 |
+| **◌ Dormant** | Added more than 6 months ago and not running on any platform | 5 |
 
-`Newly Added` and `New addition and Trending` are mutually exclusive — a new segment earns one or the other, never both.
+A top-5% cut on a small cohort rounds up, so every cohort awards at least one winner.
 
-**Every label carries its reason.** A chip a buyer cannot interrogate is worse than no chip, so each award ships with a `labelReasons` entry quoting the segment's own figure *and* the cut-off it beat — "10 buyers have this segment enabled — the catalogue's top 10% starts at 10" — shown on hover. The Marketplace performance tab goes further and lists **every** label including the misses, with how far short the segment fell. A label with a count of 0 is dropped from the facet dropdown rather than offered as a dead end.
+**Every label carries its reason.** A chip a buyer cannot interrogate is worse than no chip, so each award ships with a `labelReasons` entry quoting the segment's own figure *and* the cut-off it beat — "$9,400 of Marketplace revenue over 90 days — the top 5% of Retail > Consumer Electronics starts at $4,120" — shown on hover. The Marketplace performance tab goes further and lists **every** label including the misses, with how far short the segment fell. A label with a count of 0 is dropped from the facet dropdown rather than offered as a dead end.
 
 Definitions live in two places: the wording and criteria in `LABEL_VOCABULARY` (`src/api/mock/catalogRows.ts`), the icon and chip tone in `LABEL_META` (`src/lib/labels.ts`). The per-segment reason is built by `explainLabel` in `src/api/adapters/catalog.ts`.
 
@@ -468,7 +467,7 @@ The agent answers in prose and returns its evidence — cited fragments, the SQL
 | What you do | What happens | Where |
 |---|---|---|
 | Type `smart watch` | Debounced 300 ms, matches path and seller, whitespace-insensitive | `FilterBar.tsx` |
-| Tick *Top performance* + *Best seller* | Results **widen** (OR) | `mock/index.ts` |
+| Tick *Best seller* + *Top campaign spend* | Results **widen** (OR) | `mock/index.ts` |
 | Tick *Facebook* + *Snapchat* | Results **narrow** to segments live on both (AND) | `mock/index.ts` |
 | Click a column header | Server-side re-sort; clicking the active column flips direction | `SegmentsTable.tsx` |
 | Copy the URL after filtering | Filters and sort travel with the link; back button works | `useSegmentQueryParams.ts` |

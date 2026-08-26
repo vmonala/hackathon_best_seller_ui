@@ -10,7 +10,7 @@ import { cn } from '@/lib/cn'
  *
  * The reason is the whole point of the chip — "Best seller" only means
  * something once you know it is "10 buyers have this enabled, and the
- * catalogue's top 10% starts at 10" — so it is carried both in the tooltip and
+ * cohort's top 5% starts at $4,120" — so it is carried both in the tooltip and
  * in a native `title`, which keeps it reachable on touch and matches how every
  * other badge in the app behaves.
  */

@@ -24,13 +24,14 @@ import type { SegmentFeatureRow, SegmentLabelRow } from '../backend'
  * match anything upstream — the service that issued the originals is gone. The
  * CSV rows keep the ids the team sent, untouched.
  *
- * ## Delivered usage and lifecycle: `impressions_90d`, `impressions_prior_90d`,
+ * ## Delivered usage, commercials and lifecycle: `impressions_90d`,
+ * `impressions_prior_90d`, `media_spend_90d`, `marketplace_revenue_90d`,
  * `added_at`
  *
- * Neither capture carries a delivered-usage signal or a created date — the feed
- * reports distribution footprint and measured reach only. The three fields above
- * are **generated for this fixture**, not measured, so that the lifecycle and
- * impressions labels have something real to read. Every value is a deterministic
+ * Neither capture carries a delivered-usage, commercial or created-date signal —
+ * the feed reports distribution footprint and measured reach only. The five
+ * fields above are **generated for this fixture**, not measured, so that the
+ * spend, revenue, impressions and lifecycle labels have something real to read. Every value is a deterministic
  * function of the row's own id and reach, so they are stable across renders,
  * sorts and reloads:
  *
@@ -45,29 +46,36 @@ import type { SegmentFeatureRow, SegmentLabelRow } from '../backend'
  *     baseline rather than a partial one.
  *   - `added_at` is 18–1,098 days before 2026-08-26, biased towards recent so a
  *     meaningful handful of rows fall inside the 90-day new window.
+ *   - `media_spend_90d` is the buy-side media running against the segment:
+ *     `impressions_90d` billed at a CPM of $2.50–$12.00 drawn from the id,
+ *     rounded to the nearest hundred dollars. It is **0** wherever nothing
+ *     delivered.
+ *   - `marketplace_revenue_90d` is LiveRamp's cut of that spend, 8–42% again
+ *     drawn from the id — a separate draw, so a segment can carry heavy media
+ *     without being a top revenue earner and vice versa.
  *
  * ## Where `label_keys` comes from
  *
  * Labels are recomputed here from each row, using the rules the label
- * descriptions state:
+ * descriptions state. "Cohort" is the segment's two-token taxonomy branch —
+ * `Retail > Consumer Electronics`, `Health & Fitness > Connected Devices` and so
+ * on — so a segment is measured against comparable segments rather than against
+ * the whole catalogue:
  *
- *   - `top_performance`: the row's own `is_top_n_by_reach` flag — the "top by
- *     reach" verdict, computed over the backend's full catalogue.
- *   - `best_seller`: `active_buyers` in the top 10% of this catalogue
- *     (10+ buyers), ties included.
- *   - `top_impressions`: `impressions_90d` in the top 10% of this catalogue
- *     (37,506,000+), ties included.
+ *   - `top_campaign_spend`: `media_spend_90d` in the catalogue's top 5%.
+ *   - `best_seller`: `marketplace_revenue_90d` in the top 5% of its cohort, and
+ *     5 or more `active_buyers`.
+ *   - `most_impressions`: `impressions_90d` in the top 5% of its cohort.
  *   - `active_platforms`: `active_platforms` at or above 4.
- *   - `newly_added` / `new_addition_trending`: `added_at` inside the last 90
- *     days. The trending variant is the one already at or above the catalogue's
- *     median impressions (13,787,000) in that
- *     first window; the plain variant is everything else. A row carries one or
- *     the other, never both.
- *   - `dormant`: `impressions_90d` of 0.
+ *   - `new_addition_trending`: `added_at` inside the last 90 days, with 5 or
+ *     more `active_buyers`.
+ *   - `dormant`: added more than 6 months ago and `impressions_90d` of 0 — not
+ *     running anywhere.
  *
- * The percentile and median cut-offs are relative to the 68 rows here, so adding
- * or removing rows moves them. Regenerate the whole file rather than
- * hand-editing a row, or the cut-offs and the chips will disagree.
+ * A top-5% cut on a small cohort rounds up, so every cohort awards at least one
+ * winner. The cut-offs are relative to the 68 rows here, so adding or removing
+ * rows moves them. Regenerate the whole file rather than hand-editing a row, or
+ * the cut-offs and the chips will disagree.
  */
 export const CATALOG_ROWS: SegmentFeatureRow[] = [
   /* ---- smartwatch_segments.csv, 2026-08-26 (ids as delivered) ---- */
@@ -86,7 +94,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "InMarket",
       "LiveIntent",
       "StackAdapt",
-      "Teads",
+      "Teads"
     ],
     "cookie_reach": 3746623,
     "ios_reach": 3009603,
@@ -99,13 +107,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "InMarket": 2766756,
       "LiveIntent": 2413059,
       "StackAdapt": 1904345,
-      "Teads": 2703890,
+      "Teads": 2703890
     },
     "cookie_reach_updated_at": "2026-01-10T01:13:34Z",
     "ios_reach_updated_at": "2026-01-10T01:26:16Z",
     "android_reach_updated_at": "2026-01-10T01:41:06Z",
     "impressions_90d": 8360000,
     "impressions_prior_90d": 7540000,
+    "media_spend_90d": 34100,
+    "marketplace_revenue_90d": 10980,
     "added_at": "2025-01-29",
     "distribution_rank": 408,
     "reach_rank": 73519,
@@ -113,8 +123,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009200201,
@@ -132,7 +142,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Roku",
       "Samsung Ads",
       "The Trade Desk",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 2365205,
     "ios_reach": 1657458,
@@ -146,13 +156,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Roku": 1906859,
       "Samsung Ads": 1179469,
       "The Trade Desk": 1700149,
-      "Xandr": 1913158,
+      "Xandr": 1913158
     },
     "cookie_reach_updated_at": "2026-01-10T01:17:45Z",
     "ios_reach_updated_at": "2026-01-10T01:33:59Z",
     "android_reach_updated_at": "2026-01-10T01:55:09Z",
     "impressions_90d": 3069000,
     "impressions_prior_90d": 4115000,
+    "media_spend_90d": 29000,
+    "marketplace_revenue_90d": 7330,
     "added_at": "2026-03-22",
     "distribution_rank": 715,
     "reach_rank": 11604,
@@ -160,8 +172,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009200301,
@@ -173,7 +185,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_buyers": 1,
     "active_platforms": 1,
     "active_platform_names": [
-      "Teads",
+      "Teads"
     ],
     "cookie_reach": 5258574,
     "ios_reach": 3482921,
@@ -181,13 +193,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "max_connect_reach": 5258574,
     "input_records": 10523623,
     "reach_by_platform": {
-      "Teads": 3245154,
+      "Teads": 3245154
     },
     "cookie_reach_updated_at": "2026-01-10T01:18:47Z",
     "ios_reach_updated_at": "2026-01-10T01:33:40Z",
     "android_reach_updated_at": "2026-01-10T01:51:23Z",
     "impressions_90d": 0,
     "impressions_prior_90d": 4965000,
+    "media_spend_90d": 0,
+    "marketplace_revenue_90d": 0,
     "added_at": "2024-02-14",
     "distribution_rank": 25490,
     "reach_rank": 26831,
@@ -195,8 +209,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "dormant",
-    ],
+      "dormant"
+    ]
   },
   {
     "dms_segment_id": 1009200401,
@@ -213,7 +227,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "InMarket",
       "LiveIntent",
       "MNTN",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 1059738,
     "ios_reach": 655137,
@@ -226,13 +240,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "InMarket": 849623,
       "LiveIntent": 853912,
       "MNTN": 358278,
-      "Yahoo! (fka Verizon Media)": 690050,
+      "Yahoo! (fka Verizon Media)": 690050
     },
     "cookie_reach_updated_at": "2026-01-10T01:18:16Z",
     "ios_reach_updated_at": "2026-01-10T01:37:57Z",
     "android_reach_updated_at": "2026-01-10T01:54:34Z",
     "impressions_90d": 1933000,
     "impressions_prior_90d": 1992000,
+    "media_spend_90d": 22600,
+    "marketplace_revenue_90d": 8450,
     "added_at": "2025-07-31",
     "distribution_rank": 844,
     "reach_rank": 4560,
@@ -240,8 +256,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009200501,
@@ -256,7 +272,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Beeswax",
       "DeepIntent",
       "Facebook",
-      "Samsung Ads",
+      "Samsung Ads"
     ],
     "cookie_reach": 3782636,
     "ios_reach": 3049703,
@@ -267,13 +283,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Beeswax": 3406414,
       "DeepIntent": 2658954,
       "Facebook": 2530749,
-      "Samsung Ads": 2423505,
+      "Samsung Ads": 2423505
     },
     "cookie_reach_updated_at": "2026-01-10T01:21:15Z",
     "ios_reach_updated_at": "2026-01-10T01:36:03Z",
     "android_reach_updated_at": "2026-01-10T01:45:22Z",
     "impressions_90d": 10392000,
     "impressions_prior_90d": 0,
+    "media_spend_90d": 115100,
+    "marketplace_revenue_90d": 42460,
     "added_at": "2026-06-27",
     "distribution_rank": 13744,
     "reach_rank": 49233,
@@ -281,9 +299,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-      "newly_added",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009200601,
@@ -302,7 +319,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "LiveIntent",
       "Samsung Ads",
       "Simpli.fi",
-      "Tapad (A part of Experian)",
+      "Tapad (A part of Experian)"
     ],
     "cookie_reach": 10665753,
     "ios_reach": 8473894,
@@ -317,13 +334,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "LiveIntent": 7552395,
       "Samsung Ads": 7834344,
       "Simpli.fi": 4584416,
-      "Tapad (A part of Experian)": 5844064,
+      "Tapad (A part of Experian)": 5844064
     },
     "cookie_reach_updated_at": "2026-01-10T01:13:08Z",
     "ios_reach_updated_at": "2026-01-10T01:39:00Z",
     "android_reach_updated_at": "2026-01-10T01:50:31Z",
     "impressions_90d": 32463000,
     "impressions_prior_90d": 27179000,
+    "media_spend_90d": 226600,
+    "marketplace_revenue_90d": 50620,
     "added_at": "2024-09-25",
     "distribution_rank": 506,
     "reach_rank": 320,
@@ -331,8 +350,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009200701,
@@ -350,7 +369,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Nexxen (fka Amobee)",
       "Simpli.fi",
       "Tapad (A part of Experian)",
-      "Teads",
+      "Teads"
     ],
     "cookie_reach": 12880744,
     "ios_reach": 9192810,
@@ -364,13 +383,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Nexxen (fka Amobee)": 4755026,
       "Simpli.fi": 11915046,
       "Tapad (A part of Experian)": 10698594,
-      "Teads": 6593735,
+      "Teads": 6593735
     },
     "cookie_reach_updated_at": "2026-01-10T01:20:08Z",
     "ios_reach_updated_at": "2026-01-10T01:39:30Z",
     "android_reach_updated_at": "2026-01-10T01:53:15Z",
     "impressions_90d": 20317000,
     "impressions_prior_90d": 24433000,
+    "media_spend_90d": 214400,
+    "marketplace_revenue_90d": 86140,
     "added_at": "2026-01-02",
     "distribution_rank": 626,
     "reach_rank": 305,
@@ -378,9 +399,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009200801,
@@ -394,7 +414,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_platform_names": [
       "Adobe Audience Manager",
       "Simpli.fi",
-      "Teads",
+      "Teads"
     ],
     "cookie_reach": 4274774,
     "ios_reach": 3381304,
@@ -404,20 +424,22 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "reach_by_platform": {
       "Adobe Audience Manager": 2142417,
       "Simpli.fi": 2852602,
-      "Teads": 2281146,
+      "Teads": 2281146
     },
     "cookie_reach_updated_at": "2026-01-10T01:23:08Z",
     "ios_reach_updated_at": "2026-01-10T01:29:29Z",
     "android_reach_updated_at": "2026-01-10T01:43:34Z",
     "impressions_90d": 8881000,
     "impressions_prior_90d": 6260000,
+    "media_spend_90d": 78600,
+    "marketplace_revenue_90d": 21310,
     "added_at": "2023-09-16",
     "distribution_rank": 57116,
     "reach_rank": 66931,
     "is_highly_distributed": false,
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
-    "label_keys": [],
+    "label_keys": []
   },
   {
     "dms_segment_id": 1009200901,
@@ -431,7 +453,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_platform_names": [
       "DeepIntent",
       "StackAdapt",
-      "The Trade Desk",
+      "The Trade Desk"
     ],
     "cookie_reach": 5387941,
     "ios_reach": 4138504,
@@ -441,20 +463,22 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "reach_by_platform": {
       "DeepIntent": 2473703,
       "StackAdapt": 3223061,
-      "The Trade Desk": 2946807,
+      "The Trade Desk": 2946807
     },
     "cookie_reach_updated_at": "2026-01-10T01:15:10Z",
     "ios_reach_updated_at": "2026-01-10T01:36:12Z",
     "android_reach_updated_at": "2026-01-10T01:50:25Z",
     "impressions_90d": 7397000,
     "impressions_prior_90d": 7006000,
+    "media_spend_90d": 58300,
+    "marketplace_revenue_90d": 15350,
     "added_at": "2025-04-12",
     "distribution_rank": 36914,
     "reach_rank": 13682,
     "is_highly_distributed": false,
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
-    "label_keys": [],
+    "label_keys": []
   },
   {
     "dms_segment_id": 1009201001,
@@ -475,7 +499,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi",
       "StackAdapt",
       "Teads",
-      "Vistar Media",
+      "Vistar Media"
     ],
     "cookie_reach": 7796016,
     "ios_reach": 5465621,
@@ -492,13 +516,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi": 2972326,
       "StackAdapt": 5636957,
       "Teads": 2676106,
-      "Vistar Media": 7005895,
+      "Vistar Media": 7005895
     },
     "cookie_reach_updated_at": "2026-01-10T01:15:35Z",
     "ios_reach_updated_at": "2026-01-10T01:40:41Z",
     "android_reach_updated_at": "2026-01-10T01:41:06Z",
     "impressions_90d": 43007000,
     "impressions_prior_90d": 62065000,
+    "media_spend_90d": 271700,
+    "marketplace_revenue_90d": 92940,
     "added_at": "2026-05-03",
     "distribution_rank": 276,
     "reach_rank": 58072,
@@ -506,10 +532,10 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "top_impressions",
       "best_seller",
-      "active_platforms",
-    ],
+      "most_impressions",
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009201101,
@@ -524,7 +550,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Beeswax",
       "DeepIntent",
       "Roku",
-      "The Trade Desk",
+      "The Trade Desk"
     ],
     "cookie_reach": 13421473,
     "ios_reach": 8247011,
@@ -535,13 +561,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Beeswax": 12294025,
       "DeepIntent": 7589034,
       "Roku": 12006225,
-      "The Trade Desk": 6173781,
+      "The Trade Desk": 6173781
     },
     "cookie_reach_updated_at": "2026-01-10T01:13:23Z",
     "ios_reach_updated_at": "2026-01-10T01:35:23Z",
     "android_reach_updated_at": "2026-01-10T01:50:25Z",
     "impressions_90d": 28414000,
     "impressions_prior_90d": 22197000,
+    "media_spend_90d": 157700,
+    "marketplace_revenue_90d": 50190,
     "added_at": "2024-05-12",
     "distribution_rank": 27992,
     "reach_rank": 272,
@@ -549,9 +577,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009201201,
@@ -567,7 +594,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Magnite DV+ (Rubicon Project)",
       "Roku",
       "Teads",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 7198611,
     "ios_reach": 5490613,
@@ -579,13 +606,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Magnite DV+ (Rubicon Project)": 2394016,
       "Roku": 3198003,
       "Teads": 4940341,
-      "Xandr": 4584987,
+      "Xandr": 4584987
     },
     "cookie_reach_updated_at": "2026-01-10T01:23:54Z",
     "ios_reach_updated_at": "2026-01-10T01:35:08Z",
     "android_reach_updated_at": "2026-01-10T01:45:02Z",
     "impressions_90d": 10657000,
     "impressions_prior_90d": 11619000,
+    "media_spend_90d": 78100,
+    "marketplace_revenue_90d": 31410,
     "added_at": "2025-10-02",
     "distribution_rank": 7277,
     "reach_rank": 85118,
@@ -593,8 +622,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009201301,
@@ -614,7 +643,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Teads",
       "The Trade Desk",
       "Xandr",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 11473713,
     "ios_reach": 6739573,
@@ -630,13 +659,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Teads": 8129134,
       "The Trade Desk": 3449052,
       "Xandr": 9103517,
-      "Yahoo! (fka Verizon Media)": 9194777,
+      "Yahoo! (fka Verizon Media)": 9194777
     },
     "cookie_reach_updated_at": "2026-01-10T01:13:55Z",
     "ios_reach_updated_at": "2026-01-10T01:27:02Z",
     "android_reach_updated_at": "2026-01-10T01:44:28Z",
     "impressions_90d": 52120000,
     "impressions_prior_90d": 0,
+    "media_spend_90d": 365700,
+    "marketplace_revenue_90d": 144220,
     "added_at": "2026-07-21",
     "distribution_rank": 310,
     "reach_rank": 234,
@@ -644,11 +675,12 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "top_impressions",
+      "top_campaign_spend",
+      "best_seller",
+      "most_impressions",
       "active_platforms",
-      "new_addition_trending",
-    ],
+      "new_addition_trending"
+    ]
   },
   {
     "dms_segment_id": 1009201401,
@@ -664,7 +696,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Beeswax",
       "Google | Data Marketplace",
       "Nexxen (fka Amobee)",
-      "Tapad (A part of Experian)",
+      "Tapad (A part of Experian)"
     ],
     "cookie_reach": 12500190,
     "ios_reach": 8669971,
@@ -676,13 +708,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Beeswax": 8813218,
       "Google | Data Marketplace": 10252118,
       "Nexxen (fka Amobee)": 9204679,
-      "Tapad (A part of Experian)": 4924361,
+      "Tapad (A part of Experian)": 4924361
     },
     "cookie_reach_updated_at": "2026-01-10T01:22:29Z",
     "ios_reach_updated_at": "2026-01-10T01:30:59Z",
     "android_reach_updated_at": "2026-01-10T01:52:06Z",
     "impressions_90d": 25810000,
     "impressions_prior_90d": 22611000,
+    "media_spend_90d": 181000,
+    "marketplace_revenue_90d": 17540,
     "added_at": "2024-12-13",
     "distribution_rank": 36057,
     "reach_rank": 258,
@@ -690,9 +724,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009201501,
@@ -710,7 +743,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "MNTN",
       "Samsung Ads",
       "Simpli.fi",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 3188924,
     "ios_reach": 2294821,
@@ -724,13 +757,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "MNTN": 1446328,
       "Samsung Ads": 2559526,
       "Simpli.fi": 1038775,
-      "Xandr": 2725197,
+      "Xandr": 2725197
     },
     "cookie_reach_updated_at": "2026-01-10T01:17:22Z",
     "ios_reach_updated_at": "2026-01-10T01:31:58Z",
     "android_reach_updated_at": "2026-01-10T01:52:31Z",
     "impressions_90d": 4478000,
     "impressions_prior_90d": 5751000,
+    "media_spend_90d": 46000,
+    "marketplace_revenue_90d": 12420,
     "added_at": "2026-02-21",
     "distribution_rank": 450,
     "reach_rank": 3504,
@@ -738,8 +773,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009201601,
@@ -757,7 +792,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Tapad (A part of Experian)",
       "Teads",
       "Vistar Media",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 6519778,
     "ios_reach": 4290225,
@@ -771,13 +806,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Tapad (A part of Experian)": 3423431,
       "Teads": 4645203,
       "Vistar Media": 2585119,
-      "Xandr": 5755324,
+      "Xandr": 5755324
     },
     "cookie_reach_updated_at": "2026-01-10T01:25:43Z",
     "ios_reach_updated_at": "2026-01-10T01:38:29Z",
     "android_reach_updated_at": "2026-01-10T01:41:50Z",
     "impressions_90d": 21667000,
     "impressions_prior_90d": 15865000,
+    "media_spend_90d": 101800,
+    "marketplace_revenue_90d": 37520,
     "added_at": "2023-12-19",
     "distribution_rank": 631,
     "reach_rank": 88378,
@@ -785,8 +822,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009201701,
@@ -807,7 +844,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi",
       "StackAdapt",
       "The Trade Desk",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 4809148,
     "ios_reach": 3020728,
@@ -824,13 +861,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi": 3112768,
       "StackAdapt": 4007730,
       "The Trade Desk": 1863300,
-      "Yahoo! (fka Verizon Media)": 1717346,
+      "Yahoo! (fka Verizon Media)": 1717346
     },
     "cookie_reach_updated_at": "2026-01-10T01:20:04Z",
     "ios_reach_updated_at": "2026-01-10T01:37:20Z",
     "android_reach_updated_at": "2026-01-10T01:53:59Z",
     "impressions_90d": 13407000,
     "impressions_prior_90d": 13369000,
+    "media_spend_90d": 60400,
+    "marketplace_revenue_90d": 14960,
     "added_at": "2025-06-21",
     "distribution_rank": 375,
     "reach_rank": 42367,
@@ -838,9 +877,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "best_seller",
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009201801,
@@ -855,7 +893,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Beeswax",
       "Nexxen (fka Amobee)",
       "Simpli.fi",
-      "Vistar Media",
+      "Vistar Media"
     ],
     "cookie_reach": 8107820,
     "ios_reach": 5362571,
@@ -866,13 +904,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Beeswax": 2725710,
       "Nexxen (fka Amobee)": 6284190,
       "Simpli.fi": 3370296,
-      "Vistar Media": 2848294,
+      "Vistar Media": 2848294
     },
     "cookie_reach_updated_at": "2026-01-10T01:10:34Z",
     "ios_reach_updated_at": "2026-01-10T01:39:17Z",
     "android_reach_updated_at": "2026-01-10T01:55:47Z",
     "impressions_90d": 22878000,
     "impressions_prior_90d": 0,
+    "media_spend_90d": 122400,
+    "marketplace_revenue_90d": 32130,
     "added_at": "2026-06-08",
     "distribution_rank": 21045,
     "reach_rank": 107,
@@ -880,9 +920,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-      "new_addition_trending",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009201901,
@@ -894,7 +933,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_buyers": 1,
     "active_platforms": 1,
     "active_platform_names": [
-      "Criteo",
+      "Criteo"
     ],
     "cookie_reach": 11652129,
     "ios_reach": 7057308,
@@ -902,13 +941,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "max_connect_reach": 11652129,
     "input_records": 25475299,
     "reach_by_platform": {
-      "Criteo": 8411093,
+      "Criteo": 8411093
     },
     "cookie_reach_updated_at": "2026-01-10T01:10:49Z",
     "ios_reach_updated_at": "2026-01-10T01:26:19Z",
     "android_reach_updated_at": "2026-01-10T01:53:55Z",
     "impressions_90d": 0,
     "impressions_prior_90d": 10665000,
+    "media_spend_90d": 0,
+    "marketplace_revenue_90d": 0,
     "added_at": "2024-08-05",
     "distribution_rank": 19736,
     "reach_rank": 252,
@@ -916,9 +957,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "dormant",
-    ],
+      "dormant"
+    ]
   },
   {
     "dms_segment_id": 1009202001,
@@ -939,7 +979,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "The Trade Desk",
       "Vistar Media",
       "Xandr",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 2421305,
     "ios_reach": 1792567,
@@ -956,13 +996,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "The Trade Desk": 1145987,
       "Vistar Media": 1824523,
       "Xandr": 2273751,
-      "Yahoo! (fka Verizon Media)": 1606874,
+      "Yahoo! (fka Verizon Media)": 1606874
     },
     "cookie_reach_updated_at": "2026-01-10T01:14:30Z",
     "ios_reach_updated_at": "2026-01-10T01:34:11Z",
     "android_reach_updated_at": "2026-01-10T01:52:55Z",
     "impressions_90d": 5319000,
     "impressions_prior_90d": 6154000,
+    "media_spend_90d": 32400,
+    "marketplace_revenue_90d": 5590,
     "added_at": "2025-11-29",
     "distribution_rank": 578,
     "reach_rank": 26638,
@@ -970,9 +1012,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "best_seller",
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009202101,
@@ -985,7 +1026,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_platforms": 2,
     "active_platform_names": [
       "Google | Data Marketplace",
-      "Teads",
+      "Teads"
     ],
     "cookie_reach": 4094759,
     "ios_reach": 3356050,
@@ -994,22 +1035,22 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "input_records": 5817997,
     "reach_by_platform": {
       "Google | Data Marketplace": 2115382,
-      "Teads": 2908523,
+      "Teads": 2908523
     },
     "cookie_reach_updated_at": "2026-01-10T01:21:21Z",
     "ios_reach_updated_at": "2026-01-10T01:28:57Z",
     "android_reach_updated_at": "2026-01-10T01:42:27Z",
     "impressions_90d": 7270000,
     "impressions_prior_90d": 0,
+    "media_spend_90d": 52000,
+    "marketplace_revenue_90d": 4810,
     "added_at": "2026-08-06",
     "distribution_rank": 25189,
     "reach_rank": 50477,
     "is_highly_distributed": false,
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
-    "label_keys": [
-      "newly_added",
-    ],
+    "label_keys": []
   },
   {
     "dms_segment_id": 1009202201,
@@ -1027,7 +1068,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi",
       "Teads",
       "Xandr",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 12869410,
     "ios_reach": 9703432,
@@ -1041,13 +1082,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi": 7714179,
       "Teads": 11063541,
       "Xandr": 9185148,
-      "Yahoo! (fka Verizon Media)": 11126439,
+      "Yahoo! (fka Verizon Media)": 11126439
     },
     "cookie_reach_updated_at": "2026-01-10T01:14:44Z",
     "ios_reach_updated_at": "2026-01-10T01:32:18Z",
     "android_reach_updated_at": "2026-01-10T01:50:34Z",
     "impressions_90d": 31109000,
     "impressions_prior_90d": 28579000,
+    "media_spend_90d": 227100,
+    "marketplace_revenue_90d": 61830,
     "added_at": "2025-02-27",
     "distribution_rank": 80,
     "reach_rank": 144,
@@ -1055,9 +1098,9 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "active_platforms",
-    ],
+      "best_seller",
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009202301,
@@ -1077,7 +1120,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi",
       "Tapad (A part of Experian)",
       "Vistar Media",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 11085322,
     "ios_reach": 7809405,
@@ -1093,13 +1136,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi": 3638925,
       "Tapad (A part of Experian)": 4956385,
       "Vistar Media": 8244238,
-      "Xandr": 10441399,
+      "Xandr": 10441399
     },
     "cookie_reach_updated_at": "2026-01-10T01:12:13Z",
     "ios_reach_updated_at": "2026-01-10T01:32:55Z",
     "android_reach_updated_at": "2026-01-10T01:51:41Z",
     "impressions_90d": 16418000,
     "impressions_prior_90d": 22625000,
+    "media_spend_90d": 140400,
+    "marketplace_revenue_90d": 50150,
     "added_at": "2026-04-07",
     "distribution_rank": 476,
     "reach_rank": 232,
@@ -1107,9 +1152,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009202401,
@@ -1129,7 +1173,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Nexxen (fka Amobee)",
       "Roku",
       "StackAdapt",
-      "Tapad (A part of Experian)",
+      "Tapad (A part of Experian)"
     ],
     "cookie_reach": 6009741,
     "ios_reach": 4018746,
@@ -1145,13 +1189,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Nexxen (fka Amobee)": 3718604,
       "Roku": 2693381,
       "StackAdapt": 3395749,
-      "Tapad (A part of Experian)": 4297675,
+      "Tapad (A part of Experian)": 4297675
     },
     "cookie_reach_updated_at": "2026-01-10T01:14:40Z",
     "ios_reach_updated_at": "2026-01-10T01:39:37Z",
     "android_reach_updated_at": "2026-01-10T01:53:40Z",
     "impressions_90d": 22774000,
     "impressions_prior_90d": 17348000,
+    "media_spend_90d": 138300,
+    "marketplace_revenue_90d": 45940,
     "added_at": "2024-03-19",
     "distribution_rank": 412,
     "reach_rank": 82132,
@@ -1159,8 +1205,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009202501,
@@ -1177,7 +1223,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Tapad (A part of Experian)",
       "The Trade Desk",
       "Vistar Media",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 13922371,
     "ios_reach": 11817120,
@@ -1190,13 +1236,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Tapad (A part of Experian)": 5541270,
       "The Trade Desk": 4250842,
       "Vistar Media": 6550234,
-      "Xandr": 5459221,
+      "Xandr": 5459221
     },
     "cookie_reach_updated_at": "2026-01-10T01:23:38Z",
     "ios_reach_updated_at": "2026-01-10T01:27:54Z",
     "android_reach_updated_at": "2026-01-10T01:53:32Z",
     "impressions_90d": 24573000,
     "impressions_prior_90d": 25869000,
+    "media_spend_90d": 283300,
+    "marketplace_revenue_90d": 64090,
     "added_at": "2025-08-25",
     "distribution_rank": 550,
     "reach_rank": 333,
@@ -1204,9 +1252,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009202601,
@@ -1223,7 +1270,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Nexxen (fka Amobee)",
       "Roku",
       "Tapad (A part of Experian)",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 6393732,
     "ios_reach": 4940898,
@@ -1236,13 +1283,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Nexxen (fka Amobee)": 5655514,
       "Roku": 2611380,
       "Tapad (A part of Experian)": 2214325,
-      "Xandr": 3283908,
+      "Xandr": 3283908
     },
     "cookie_reach_updated_at": "2026-01-10T01:17:56Z",
     "ios_reach_updated_at": "2026-01-10T01:37:17Z",
     "android_reach_updated_at": "2026-01-10T01:42:46Z",
     "impressions_90d": 22310000,
     "impressions_prior_90d": 0,
+    "media_spend_90d": 158600,
+    "marketplace_revenue_90d": 43370,
     "added_at": "2026-07-07",
     "distribution_rank": 776,
     "reach_rank": 30057,
@@ -1250,9 +1299,10 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
+      "best_seller",
       "active_platforms",
-      "new_addition_trending",
-    ],
+      "new_addition_trending"
+    ]
   },
   {
     "dms_segment_id": 1009202701,
@@ -1268,7 +1318,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "DeepIntent",
       "Nexxen (fka Amobee)",
       "Tapad (A part of Experian)",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 7778856,
     "ios_reach": 6048158,
@@ -1280,13 +1330,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "DeepIntent": 2389910,
       "Nexxen (fka Amobee)": 3887276,
       "Tapad (A part of Experian)": 2606242,
-      "Xandr": 2915790,
+      "Xandr": 2915790
     },
     "cookie_reach_updated_at": "2026-01-10T01:12:29Z",
     "ios_reach_updated_at": "2026-01-10T01:27:15Z",
     "android_reach_updated_at": "2026-01-10T01:43:17Z",
     "impressions_90d": 16724000,
     "impressions_prior_90d": 14243000,
+    "media_spend_90d": 86300,
+    "marketplace_revenue_90d": 26930,
     "added_at": "2024-10-26",
     "distribution_rank": 18439,
     "reach_rank": 16059,
@@ -1294,8 +1346,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009202801,
@@ -1316,7 +1368,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Roku",
       "Samsung Ads",
       "Teads",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 13518218,
     "ios_reach": 9898529,
@@ -1333,13 +1385,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Roku": 5495276,
       "Samsung Ads": 4603994,
       "Teads": 12117473,
-      "Yahoo! (fka Verizon Media)": 12031421,
+      "Yahoo! (fka Verizon Media)": 12031421
     },
     "cookie_reach_updated_at": "2026-01-10T01:20:51Z",
     "ios_reach_updated_at": "2026-01-10T01:30:27Z",
     "android_reach_updated_at": "2026-01-10T01:46:36Z",
     "impressions_90d": 26647000,
     "impressions_prior_90d": 32844000,
+    "media_spend_90d": 318300,
+    "marketplace_revenue_90d": 53170,
     "added_at": "2026-01-21",
     "distribution_rank": 817,
     "reach_rank": 48,
@@ -1347,10 +1401,9 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
       "best_seller",
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009202901,
@@ -1371,7 +1424,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi",
       "Teads",
       "Vistar Media",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 13951866,
     "ios_reach": 7701483,
@@ -1388,13 +1441,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi": 12885478,
       "Teads": 4736462,
       "Vistar Media": 5297865,
-      "Xandr": 4771742,
+      "Xandr": 4771742
     },
     "cookie_reach_updated_at": "2026-01-10T01:17:23Z",
     "ios_reach_updated_at": "2026-01-10T01:31:45Z",
     "android_reach_updated_at": "2026-01-10T01:51:12Z",
     "impressions_90d": 62424000,
     "impressions_prior_90d": 44638000,
+    "media_spend_90d": 531900,
+    "marketplace_revenue_90d": 203080,
     "added_at": "2023-10-23",
     "distribution_rank": 595,
     "reach_rank": 302,
@@ -1402,11 +1457,11 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "top_impressions",
+      "top_campaign_spend",
       "best_seller",
-      "active_platforms",
-    ],
+      "most_impressions",
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009203001,
@@ -1426,7 +1481,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi",
       "StackAdapt",
       "Teads",
-      "The Trade Desk",
+      "The Trade Desk"
     ],
     "cookie_reach": 13239200,
     "ios_reach": 9636436,
@@ -1442,13 +1497,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi": 4634594,
       "StackAdapt": 4037184,
       "Teads": 11928524,
-      "The Trade Desk": 4339304,
+      "The Trade Desk": 4339304
     },
     "cookie_reach_updated_at": "2026-01-10T01:13:17Z",
     "ios_reach_updated_at": "2026-01-10T01:31:53Z",
     "android_reach_updated_at": "2026-01-10T01:47:39Z",
     "impressions_90d": 35740000,
     "impressions_prior_90d": 34512000,
+    "media_spend_90d": 358800,
+    "marketplace_revenue_90d": 35510,
     "added_at": "2025-05-09",
     "distribution_rank": 552,
     "reach_rank": 249,
@@ -1456,9 +1513,9 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "active_platforms",
-    ],
+      "top_campaign_spend",
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009203101,
@@ -1473,7 +1530,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Criteo",
       "DeepIntent",
       "Facebook",
-      "Samsung Ads",
+      "Samsung Ads"
     ],
     "cookie_reach": 8307249,
     "ios_reach": 6079782,
@@ -1484,13 +1541,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Criteo": 7004490,
       "DeepIntent": 3568284,
       "Facebook": 2857494,
-      "Samsung Ads": 4321451,
+      "Samsung Ads": 4321451
     },
     "cookie_reach_updated_at": "2026-01-10T01:25:40Z",
     "ios_reach_updated_at": "2026-01-10T01:32:04Z",
     "android_reach_updated_at": "2026-01-10T01:42:20Z",
     "impressions_90d": 24059000,
     "impressions_prior_90d": 35764000,
+    "media_spend_90d": 196300,
+    "marketplace_revenue_90d": 56850,
     "added_at": "2026-05-17",
     "distribution_rank": 9998,
     "reach_rank": 59,
@@ -1498,8 +1557,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009203201,
@@ -1514,7 +1573,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Amazon",
       "DeepIntent",
       "InMarket",
-      "Magnite DV+ (Rubicon Project)",
+      "Magnite DV+ (Rubicon Project)"
     ],
     "cookie_reach": 5298977,
     "ios_reach": 3207406,
@@ -1525,13 +1584,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Amazon": 1611286,
       "DeepIntent": 4046551,
       "InMarket": 4867417,
-      "Magnite DV+ (Rubicon Project)": 4518726,
+      "Magnite DV+ (Rubicon Project)": 4518726
     },
     "cookie_reach_updated_at": "2026-01-10T01:17:22Z",
     "ios_reach_updated_at": "2026-01-10T01:26:08Z",
     "android_reach_updated_at": "2026-01-10T01:48:42Z",
     "impressions_90d": 10975000,
     "impressions_prior_90d": 8711000,
+    "media_spend_90d": 120400,
+    "marketplace_revenue_90d": 33220,
     "added_at": "2024-06-14",
     "distribution_rank": 48426,
     "reach_rank": 55411,
@@ -1539,8 +1600,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009203301,
@@ -1556,7 +1617,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Roku",
       "Tapad (A part of Experian)",
       "Xandr",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 2703212,
     "ios_reach": 2109852,
@@ -1568,13 +1629,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Roku": 2562729,
       "Tapad (A part of Experian)": 1941880,
       "Xandr": 2111119,
-      "Yahoo! (fka Verizon Media)": 2495875,
+      "Yahoo! (fka Verizon Media)": 2495875
     },
     "cookie_reach_updated_at": "2026-01-10T01:25:57Z",
     "ios_reach_updated_at": "2026-01-10T01:27:44Z",
     "android_reach_updated_at": "2026-01-10T01:52:20Z",
     "impressions_90d": 3860000,
     "impressions_prior_90d": 4303000,
+    "media_spend_90d": 24500,
+    "marketplace_revenue_90d": 4420,
     "added_at": "2025-10-25",
     "distribution_rank": 56929,
     "reach_rank": 53737,
@@ -1582,8 +1645,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009203401,
@@ -1600,7 +1663,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Facebook",
       "LiveIntent",
       "Magnite DV+ (Rubicon Project)",
-      "Nexxen (fka Amobee)",
+      "Nexxen (fka Amobee)"
     ],
     "cookie_reach": 4391580,
     "ios_reach": 3440298,
@@ -1613,13 +1676,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Facebook": 1996810,
       "LiveIntent": 2924409,
       "Magnite DV+ (Rubicon Project)": 1673684,
-      "Nexxen (fka Amobee)": 3949091,
+      "Nexxen (fka Amobee)": 3949091
     },
     "cookie_reach_updated_at": "2026-01-10T01:14:05Z",
     "ios_reach_updated_at": "2026-01-10T01:35:56Z",
     "android_reach_updated_at": "2026-01-10T01:44:31Z",
     "impressions_90d": 14641000,
     "impressions_prior_90d": 0,
+    "media_spend_90d": 154400,
+    "marketplace_revenue_90d": 44490,
     "added_at": "2026-07-29",
     "distribution_rank": 894,
     "reach_rank": 78832,
@@ -1628,8 +1693,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_top_n_by_reach": false,
     "label_keys": [
       "active_platforms",
-      "new_addition_trending",
-    ],
+      "new_addition_trending"
+    ]
   },
   {
     "dms_segment_id": 1009203501,
@@ -1641,7 +1706,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_buyers": 1,
     "active_platforms": 1,
     "active_platform_names": [
-      "LiveIntent",
+      "LiveIntent"
     ],
     "cookie_reach": 7107646,
     "ios_reach": 4423885,
@@ -1649,13 +1714,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "max_connect_reach": 7107646,
     "input_records": 10085066,
     "reach_by_platform": {
-      "LiveIntent": 2986696,
+      "LiveIntent": 2986696
     },
     "cookie_reach_updated_at": "2026-01-10T01:17:11Z",
     "ios_reach_updated_at": "2026-01-10T01:30:04Z",
     "android_reach_updated_at": "2026-01-10T01:51:19Z",
     "impressions_90d": 0,
     "impressions_prior_90d": 6261000,
+    "media_spend_90d": 0,
+    "marketplace_revenue_90d": 0,
     "added_at": "2025-01-11",
     "distribution_rank": 29460,
     "reach_rank": 10832,
@@ -1663,8 +1730,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "dormant",
-    ],
+      "dormant"
+    ]
   },
   {
     "dms_segment_id": 1009203601,
@@ -1677,7 +1744,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_platforms": 2,
     "active_platform_names": [
       "Simpli.fi",
-      "Teads",
+      "Teads"
     ],
     "cookie_reach": 1062004,
     "ios_reach": 765277,
@@ -1686,22 +1753,22 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "input_records": 2006873,
     "reach_by_platform": {
       "Simpli.fi": 816358,
-      "Teads": 640726,
+      "Teads": 640726
     },
     "cookie_reach_updated_at": "2026-01-10T01:11:24Z",
     "ios_reach_updated_at": "2026-01-10T01:34:16Z",
     "android_reach_updated_at": "2026-01-10T01:50:19Z",
     "impressions_90d": 0,
     "impressions_prior_90d": 923000,
+    "media_spend_90d": 0,
+    "marketplace_revenue_90d": 0,
     "added_at": "2026-03-11",
     "distribution_rank": 33769,
     "reach_rank": 72918,
     "is_highly_distributed": false,
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
-    "label_keys": [
-      "dormant",
-    ],
+    "label_keys": []
   },
   {
     "dms_segment_id": 1009203701,
@@ -1720,7 +1787,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Samsung Ads",
       "Tapad (A part of Experian)",
       "Vistar Media",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 11341246,
     "ios_reach": 8845171,
@@ -1735,13 +1802,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Samsung Ads": 7628430,
       "Tapad (A part of Experian)": 6130697,
       "Vistar Media": 10681202,
-      "Xandr": 3580133,
+      "Xandr": 3580133
     },
     "cookie_reach_updated_at": "2026-01-10T01:16:39Z",
     "ios_reach_updated_at": "2026-01-10T01:29:01Z",
     "android_reach_updated_at": "2026-01-10T01:47:52Z",
     "impressions_90d": 40688000,
     "impressions_prior_90d": 30240000,
+    "media_spend_90d": 378200,
+    "marketplace_revenue_90d": 59150,
     "added_at": "2024-01-23",
     "distribution_rank": 787,
     "reach_rank": 262,
@@ -1749,10 +1818,11 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "top_impressions",
-      "active_platforms",
-    ],
+      "top_campaign_spend",
+      "best_seller",
+      "most_impressions",
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009203801,
@@ -1771,7 +1841,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Magnite DV+ (Rubicon Project)",
       "Nexxen (fka Amobee)",
       "Simpli.fi",
-      "Tapad (A part of Experian)",
+      "Tapad (A part of Experian)"
     ],
     "cookie_reach": 5571594,
     "ios_reach": 3298722,
@@ -1786,13 +1856,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Magnite DV+ (Rubicon Project)": 1851498,
       "Nexxen (fka Amobee)": 2567568,
       "Simpli.fi": 5048155,
-      "Tapad (A part of Experian)": 3262622,
+      "Tapad (A part of Experian)": 3262622
     },
     "cookie_reach_updated_at": "2026-01-10T01:21:55Z",
     "ios_reach_updated_at": "2026-01-10T01:37:54Z",
     "android_reach_updated_at": "2026-01-10T01:53:18Z",
     "impressions_90d": 12711000,
     "impressions_prior_90d": 12936000,
+    "media_spend_90d": 61400,
+    "marketplace_revenue_90d": 6670,
     "added_at": "2025-07-16",
     "distribution_rank": 222,
     "reach_rank": 60335,
@@ -1800,8 +1872,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009203901,
@@ -1821,7 +1893,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "StackAdapt",
       "Tapad (A part of Experian)",
       "Teads",
-      "Vistar Media",
+      "Vistar Media"
     ],
     "cookie_reach": 13387776,
     "ios_reach": 7392597,
@@ -1837,13 +1909,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "StackAdapt": 9321729,
       "Tapad (A part of Experian)": 6562930,
       "Teads": 4969838,
-      "Vistar Media": 12355973,
+      "Vistar Media": 12355973
     },
     "cookie_reach_updated_at": "2026-01-10T01:19:19Z",
     "ios_reach_updated_at": "2026-01-10T01:30:30Z",
     "android_reach_updated_at": "2026-01-10T01:42:42Z",
     "impressions_90d": 64259000,
     "impressions_prior_90d": 0,
+    "media_spend_90d": 264400,
+    "marketplace_revenue_90d": 51940,
     "added_at": "2026-06-20",
     "distribution_rank": 252,
     "reach_rank": 56,
@@ -1851,11 +1925,10 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "top_impressions",
+      "most_impressions",
       "active_platforms",
-      "new_addition_trending",
-    ],
+      "new_addition_trending"
+    ]
   },
   {
     "dms_segment_id": 1009204001,
@@ -1870,7 +1943,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Adobe Audience Manager",
       "DeepIntent",
       "Nexxen (fka Amobee)",
-      "StackAdapt",
+      "StackAdapt"
     ],
     "cookie_reach": 10361502,
     "ios_reach": 8528051,
@@ -1881,13 +1954,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Adobe Audience Manager": 8987360,
       "DeepIntent": 8217289,
       "Nexxen (fka Amobee)": 5942700,
-      "StackAdapt": 7113378,
+      "StackAdapt": 7113378
     },
     "cookie_reach_updated_at": "2026-01-10T01:16:53Z",
     "ios_reach_updated_at": "2026-01-10T01:37:05Z",
     "android_reach_updated_at": "2026-01-10T01:46:43Z",
     "impressions_90d": 20213000,
     "impressions_prior_90d": 16748000,
+    "media_spend_90d": 88400,
+    "marketplace_revenue_90d": 11720,
     "added_at": "2024-09-06",
     "distribution_rank": 56253,
     "reach_rank": 73,
@@ -1895,8 +1970,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009204101,
@@ -1916,7 +1991,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "The Trade Desk",
       "Vistar Media",
       "Xandr",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 7573734,
     "ios_reach": 4393587,
@@ -1932,13 +2007,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "The Trade Desk": 6463657,
       "Vistar Media": 3342382,
       "Xandr": 5067094,
-      "Yahoo! (fka Verizon Media)": 5464733,
+      "Yahoo! (fka Verizon Media)": 5464733
     },
     "cookie_reach_updated_at": "2026-01-10T01:17:36Z",
     "ios_reach_updated_at": "2026-01-10T01:28:35Z",
     "android_reach_updated_at": "2026-01-10T01:43:50Z",
     "impressions_90d": 14742000,
     "impressions_prior_90d": 17466000,
+    "media_spend_90d": 66200,
+    "marketplace_revenue_90d": 21250,
     "added_at": "2025-12-20",
     "distribution_rank": 349,
     "reach_rank": 36390,
@@ -1946,8 +2023,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009204201,
@@ -1964,7 +2041,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Criteo",
       "DeepIntent",
       "Simpli.fi",
-      "StackAdapt",
+      "StackAdapt"
     ],
     "cookie_reach": 4980622,
     "ios_reach": 2939489,
@@ -1977,13 +2054,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Criteo": 3092401,
       "DeepIntent": 3762756,
       "Simpli.fi": 2519222,
-      "StackAdapt": 2382490,
+      "StackAdapt": 2382490
     },
     "cookie_reach_updated_at": "2026-01-10T01:15:03Z",
     "ios_reach_updated_at": "2026-01-10T01:32:31Z",
     "android_reach_updated_at": "2026-01-10T01:46:21Z",
     "impressions_90d": 15830000,
     "impressions_prior_90d": 11061000,
+    "media_spend_90d": 165400,
+    "marketplace_revenue_90d": 54900,
     "added_at": "2023-08-25",
     "distribution_rank": 424,
     "reach_rank": 41705,
@@ -1991,8 +2070,9 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "best_seller",
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009204301,
@@ -2013,7 +2093,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Nexxen (fka Amobee)",
       "Teads",
       "Xandr",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 12230036,
     "ios_reach": 7579293,
@@ -2030,13 +2110,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Nexxen (fka Amobee)": 4346330,
       "Teads": 8625797,
       "Xandr": 11243769,
-      "Yahoo! (fka Verizon Media)": 6474923,
+      "Yahoo! (fka Verizon Media)": 6474923
     },
     "cookie_reach_updated_at": "2026-01-10T01:18:12Z",
     "ios_reach_updated_at": "2026-01-10T01:35:28Z",
     "android_reach_updated_at": "2026-01-10T01:50:10Z",
     "impressions_90d": 37506000,
     "impressions_prior_90d": 35108000,
+    "media_spend_90d": 214800,
+    "marketplace_revenue_90d": 74940,
     "added_at": "2025-03-27",
     "distribution_rank": 651,
     "reach_rank": 287,
@@ -2044,11 +2126,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "top_impressions",
-      "best_seller",
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009204401,
@@ -2060,7 +2139,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_buyers": 1,
     "active_platforms": 1,
     "active_platform_names": [
-      "Google | Data Marketplace",
+      "Google | Data Marketplace"
     ],
     "cookie_reach": 1903709,
     "ios_reach": 1062878,
@@ -2068,22 +2147,22 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "max_connect_reach": 1903709,
     "input_records": 3604881,
     "reach_by_platform": {
-      "Google | Data Marketplace": 1256966,
+      "Google | Data Marketplace": 1256966
     },
     "cookie_reach_updated_at": "2026-01-10T01:21:07Z",
     "ios_reach_updated_at": "2026-01-10T01:35:02Z",
     "android_reach_updated_at": "2026-01-10T01:42:44Z",
     "impressions_90d": 0,
     "impressions_prior_90d": 4509000,
+    "media_spend_90d": 0,
+    "marketplace_revenue_90d": 0,
     "added_at": "2026-04-23",
     "distribution_rank": 41852,
     "reach_rank": 38257,
     "is_highly_distributed": false,
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
-    "label_keys": [
-      "dormant",
-    ],
+    "label_keys": []
   },
   {
     "dms_segment_id": 1009204501,
@@ -2104,7 +2183,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi",
       "Teads",
       "The Trade Desk",
-      "Vistar Media",
+      "Vistar Media"
     ],
     "cookie_reach": 1182049,
     "ios_reach": 947983,
@@ -2121,13 +2200,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Simpli.fi": 689841,
       "Teads": 968308,
       "The Trade Desk": 567598,
-      "Vistar Media": 1120903,
+      "Vistar Media": 1120903
     },
     "cookie_reach_updated_at": "2026-01-10T01:11:15Z",
     "ios_reach_updated_at": "2026-01-10T01:32:48Z",
     "android_reach_updated_at": "2026-01-10T01:41:14Z",
     "impressions_90d": 4755000,
     "impressions_prior_90d": 3679000,
+    "media_spend_90d": 54400,
+    "marketplace_revenue_90d": 22000,
     "added_at": "2024-04-22",
     "distribution_rank": 285,
     "reach_rank": 17836,
@@ -2135,9 +2216,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "best_seller",
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009204601,
@@ -2153,7 +2233,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Google | Data Marketplace",
       "MNTN",
       "Simpli.fi",
-      "Teads",
+      "Teads"
     ],
     "cookie_reach": 10759760,
     "ios_reach": 7725247,
@@ -2165,13 +2245,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Google | Data Marketplace": 8657932,
       "MNTN": 10039710,
       "Simpli.fi": 8436331,
-      "Teads": 6090053,
+      "Teads": 6090053
     },
     "cookie_reach_updated_at": "2026-01-10T01:25:26Z",
     "ios_reach_updated_at": "2026-01-10T01:27:54Z",
     "android_reach_updated_at": "2026-01-10T01:51:29Z",
     "impressions_90d": 16280000,
     "impressions_prior_90d": 17511000,
+    "media_spend_90d": 107900,
+    "marketplace_revenue_90d": 17510,
     "added_at": "2025-09-17",
     "distribution_rank": 14893,
     "reach_rank": 48,
@@ -2179,8 +2261,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009204701,
@@ -2192,7 +2274,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_buyers": 1,
     "active_platforms": 1,
     "active_platform_names": [
-      "The Trade Desk",
+      "The Trade Desk"
     ],
     "cookie_reach": 989850,
     "ios_reach": 561504,
@@ -2200,22 +2282,22 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "max_connect_reach": 989850,
     "input_records": 2163999,
     "reach_by_platform": {
-      "The Trade Desk": 308893,
+      "The Trade Desk": 308893
     },
     "cookie_reach_updated_at": "2026-01-10T01:25:55Z",
     "ios_reach_updated_at": "2026-01-10T01:38:54Z",
     "android_reach_updated_at": "2026-01-10T01:44:31Z",
     "impressions_90d": 1479000,
     "impressions_prior_90d": 0,
+    "media_spend_90d": 6700,
+    "marketplace_revenue_90d": 940,
     "added_at": "2026-07-16",
     "distribution_rank": 53470,
     "reach_rank": 73117,
     "is_highly_distributed": false,
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
-    "label_keys": [
-      "newly_added",
-    ],
+    "label_keys": []
   },
   {
     "dms_segment_id": 1009204801,
@@ -2236,7 +2318,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Teads",
       "The Trade Desk",
       "Xandr",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 2758281,
     "ios_reach": 2011297,
@@ -2253,13 +2335,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Teads": 1641006,
       "The Trade Desk": 868102,
       "Xandr": 1698121,
-      "Yahoo! (fka Verizon Media)": 1513624,
+      "Yahoo! (fka Verizon Media)": 1513624
     },
     "cookie_reach_updated_at": "2026-01-10T01:18:45Z",
     "ios_reach_updated_at": "2026-01-10T01:28:06Z",
     "android_reach_updated_at": "2026-01-10T01:52:19Z",
     "impressions_90d": 9466000,
     "impressions_prior_90d": 8203000,
+    "media_spend_90d": 89700,
+    "marketplace_revenue_90d": 36160,
     "added_at": "2024-11-25",
     "distribution_rank": 817,
     "reach_rank": 35808,
@@ -2267,9 +2351,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "best_seller",
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009204901,
@@ -2287,7 +2370,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Roku",
       "Samsung Ads",
       "StackAdapt",
-      "Teads",
+      "Teads"
     ],
     "cookie_reach": 4067090,
     "ios_reach": 2710531,
@@ -2301,13 +2384,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Roku": 3381612,
       "Samsung Ads": 1629772,
       "StackAdapt": 3628084,
-      "Teads": 3804250,
+      "Teads": 3804250
     },
     "cookie_reach_updated_at": "2026-01-10T01:21:05Z",
     "ios_reach_updated_at": "2026-01-10T01:36:46Z",
     "android_reach_updated_at": "2026-01-10T01:45:22Z",
     "impressions_90d": 5878000,
     "impressions_prior_90d": 7430000,
+    "media_spend_90d": 24300,
+    "marketplace_revenue_90d": 9710,
     "added_at": "2026-02-10",
     "distribution_rank": 650,
     "reach_rank": 11995,
@@ -2315,8 +2400,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009205001,
@@ -2331,7 +2416,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Roku",
       "StackAdapt",
       "Teads",
-      "Vistar Media",
+      "Vistar Media"
     ],
     "cookie_reach": 8218971,
     "ios_reach": 6739514,
@@ -2342,13 +2427,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Roku": 6649926,
       "StackAdapt": 3998582,
       "Teads": 5687423,
-      "Vistar Media": 3217088,
+      "Vistar Media": 3217088
     },
     "cookie_reach_updated_at": "2026-01-10T01:24:21Z",
     "ios_reach_updated_at": "2026-01-10T01:29:22Z",
     "android_reach_updated_at": "2026-01-10T01:43:58Z",
     "impressions_90d": 19235000,
     "impressions_prior_90d": 13956000,
+    "media_spend_90d": 94600,
+    "marketplace_revenue_90d": 25410,
     "added_at": "2023-11-27",
     "distribution_rank": 17107,
     "reach_rank": 345,
@@ -2356,10 +2443,9 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
-
   /* ---- earlier :8000 capture, renumbered into the 1009900101 block ---- */
   {
     "dms_segment_id": 1009900101,
@@ -2379,7 +2465,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "MNTN",
       "StackAdapt",
       "Xandr",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 11700000,
     "ios_reach": 6546557,
@@ -2395,13 +2481,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "MNTN": 6926234,
       "StackAdapt": 5625640,
       "Xandr": 10121028,
-      "Yahoo! (fka Verizon Media)": 9280730,
+      "Yahoo! (fka Verizon Media)": 9280730
     },
     "cookie_reach_updated_at": "2026-01-10T01:15:44Z",
     "ios_reach_updated_at": "2026-01-10T01:32:21Z",
     "android_reach_updated_at": "2026-01-10T01:45:09Z",
     "impressions_90d": 45347000,
     "impressions_prior_90d": 33974000,
+    "media_spend_90d": 297500,
+    "marketplace_revenue_90d": 38390,
     "added_at": "2024-02-11",
     "distribution_rank": 270,
     "reach_rank": 192,
@@ -2409,10 +2497,9 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "top_impressions",
-      "active_platforms",
-    ],
+      "most_impressions",
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009900201,
@@ -2430,7 +2517,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Google | Data Marketplace",
       "Samsung Ads",
       "The Trade Desk",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 9900000,
     "ios_reach": 7612303,
@@ -2444,13 +2531,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Google | Data Marketplace": 6950174,
       "Samsung Ads": 8515083,
       "The Trade Desk": 6685261,
-      "Yahoo! (fka Verizon Media)": 7503919,
+      "Yahoo! (fka Verizon Media)": 7503919
     },
     "cookie_reach_updated_at": "2026-01-10T01:11:42Z",
     "ios_reach_updated_at": "2026-01-10T01:29:49Z",
     "android_reach_updated_at": "2026-01-10T01:45:05Z",
     "impressions_90d": 20157000,
     "impressions_prior_90d": 20740000,
+    "media_spend_90d": 75100,
+    "marketplace_revenue_90d": 26100,
     "added_at": "2025-07-29",
     "distribution_rank": 288,
     "reach_rank": 71,
@@ -2458,9 +2547,9 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "active_platforms",
-    ],
+      "most_impressions",
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009900301,
@@ -2477,7 +2566,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Nexxen (fka Amobee)",
       "Simpli.fi",
       "Tapad (A part of Experian)",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 7400000,
     "ios_reach": 4535105,
@@ -2490,13 +2579,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Nexxen (fka Amobee)": 3043176,
       "Simpli.fi": 5727099,
       "Tapad (A part of Experian)": 3005965,
-      "Yahoo! (fka Verizon Media)": 4045180,
+      "Yahoo! (fka Verizon Media)": 4045180
     },
     "cookie_reach_updated_at": "2026-01-10T01:17:43Z",
     "ios_reach_updated_at": "2026-01-10T01:31:53Z",
     "android_reach_updated_at": "2026-01-10T01:53:49Z",
     "impressions_90d": 26298000,
     "impressions_prior_90d": 0,
+    "media_spend_90d": 171000,
+    "marketplace_revenue_90d": 34420,
     "added_at": "2026-06-26",
     "distribution_rank": 107,
     "reach_rank": 32021,
@@ -2504,9 +2595,10 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
+      "most_impressions",
       "active_platforms",
-      "new_addition_trending",
-    ],
+      "new_addition_trending"
+    ]
   },
   {
     "dms_segment_id": 1009900401,
@@ -2525,7 +2617,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Nexxen (fka Amobee)",
       "Samsung Ads",
       "StackAdapt",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 13200000,
     "ios_reach": 9236955,
@@ -2540,13 +2632,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Nexxen (fka Amobee)": 10369378,
       "Samsung Ads": 7635962,
       "StackAdapt": 8966712,
-      "Yahoo! (fka Verizon Media)": 7065929,
+      "Yahoo! (fka Verizon Media)": 7065929
     },
     "cookie_reach_updated_at": "2026-01-10T01:14:32Z",
     "ios_reach_updated_at": "2026-01-10T01:33:05Z",
     "android_reach_updated_at": "2026-01-10T01:53:03Z",
     "impressions_90d": 40260000,
     "impressions_prior_90d": 33658000,
+    "media_spend_90d": 129000,
+    "marketplace_revenue_90d": 21750,
     "added_at": "2024-09-22",
     "distribution_rank": 162,
     "reach_rank": 98,
@@ -2554,10 +2648,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": true,
     "label_keys": [
-      "top_performance",
-      "top_impressions",
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009900501,
@@ -2573,7 +2665,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Google | Data Marketplace",
       "InMarket",
       "Roku",
-      "Samsung Ads",
+      "Samsung Ads"
     ],
     "cookie_reach": 6100000,
     "ios_reach": 4053363,
@@ -2585,13 +2677,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Google | Data Marketplace": 5242991,
       "InMarket": 1875522,
       "Roku": 4687662,
-      "Samsung Ads": 4532981,
+      "Samsung Ads": 4532981
     },
     "cookie_reach_updated_at": "2026-01-10T01:18:49Z",
     "ios_reach_updated_at": "2026-01-10T01:36:21Z",
     "android_reach_updated_at": "2026-01-10T01:42:18Z",
     "impressions_90d": 7697000,
     "impressions_prior_90d": 9237000,
+    "media_spend_90d": 41000,
+    "marketplace_revenue_90d": 11470,
     "added_at": "2025-12-31",
     "distribution_rank": 495,
     "reach_rank": 22730,
@@ -2599,8 +2693,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009900601,
@@ -2615,7 +2709,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Criteo",
       "Facebook",
       "Simpli.fi",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 4800000,
     "ios_reach": 3371061,
@@ -2626,13 +2720,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "Criteo": 4066008,
       "Facebook": 3023908,
       "Simpli.fi": 2060602,
-      "Yahoo! (fka Verizon Media)": 2606611,
+      "Yahoo! (fka Verizon Media)": 2606611
     },
     "cookie_reach_updated_at": "2026-01-10T01:15:34Z",
     "ios_reach_updated_at": "2026-01-10T01:38:59Z",
     "android_reach_updated_at": "2026-01-10T01:49:58Z",
     "impressions_90d": 11694000,
     "impressions_prior_90d": 8233000,
+    "media_spend_90d": 51400,
+    "marketplace_revenue_90d": 8920,
     "added_at": "2023-09-13",
     "distribution_rank": 5037,
     "reach_rank": 80504,
@@ -2640,8 +2736,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009900701,
@@ -2660,7 +2756,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "LiveIntent",
       "Teads",
       "The Trade Desk",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 10400000,
     "ios_reach": 8459389,
@@ -2675,13 +2771,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "LiveIntent": 3987926,
       "Teads": 6332908,
       "The Trade Desk": 6836672,
-      "Xandr": 4911782,
+      "Xandr": 4911782
     },
     "cookie_reach_updated_at": "2026-01-10T01:23:13Z",
     "ios_reach_updated_at": "2026-01-10T01:40:34Z",
     "android_reach_updated_at": "2026-01-10T01:53:46Z",
     "impressions_90d": 26530000,
     "impressions_prior_90d": 25086000,
+    "media_spend_90d": 262900,
+    "marketplace_revenue_90d": 33180,
     "added_at": "2025-04-10",
     "distribution_rank": 756,
     "reach_rank": 122,
@@ -2689,8 +2787,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": true,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009900801,
@@ -2706,7 +2804,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "InMarket",
       "Samsung Ads",
       "Tapad (A part of Experian)",
-      "Vistar Media",
+      "Vistar Media"
     ],
     "cookie_reach": 5100000,
     "ios_reach": 4181409,
@@ -2718,13 +2816,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "InMarket": 1599728,
       "Samsung Ads": 3366249,
       "Tapad (A part of Experian)": 3480678,
-      "Vistar Media": 1553837,
+      "Vistar Media": 1553837
     },
     "cookie_reach_updated_at": "2026-01-10T01:11:14Z",
     "ios_reach_updated_at": "2026-01-10T01:27:57Z",
     "android_reach_updated_at": "2026-01-10T01:41:55Z",
     "impressions_90d": 17216000,
     "impressions_prior_90d": 24783000,
+    "media_spend_90d": 123300,
+    "marketplace_revenue_90d": 46250,
     "added_at": "2026-05-01",
     "distribution_rank": 26654,
     "reach_rank": 11287,
@@ -2732,8 +2832,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009900901,
@@ -2748,7 +2848,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "InMarket",
       "Teads",
       "Xandr",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 6500000,
     "ios_reach": 3992761,
@@ -2759,13 +2859,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "InMarket": 4362657,
       "Teads": 3947035,
       "Xandr": 5265017,
-      "Yahoo! (fka Verizon Media)": 5361674,
+      "Yahoo! (fka Verizon Media)": 5361674
     },
     "cookie_reach_updated_at": "2026-01-10T01:16:06Z",
     "ios_reach_updated_at": "2026-01-10T01:27:42Z",
     "android_reach_updated_at": "2026-01-10T01:47:22Z",
     "impressions_90d": 13787000,
     "impressions_prior_90d": 10756000,
+    "media_spend_90d": 123600,
+    "marketplace_revenue_90d": 35100,
     "added_at": "2024-05-09",
     "distribution_rank": 32759,
     "reach_rank": 55883,
@@ -2773,8 +2875,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009901001,
@@ -2788,7 +2890,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_platform_names": [
       "InMarket",
       "The Trade Desk",
-      "Vistar Media",
+      "Vistar Media"
     ],
     "cookie_reach": 8200000,
     "ios_reach": 6931046,
@@ -2798,20 +2900,22 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "reach_by_platform": {
       "InMarket": 4268482,
       "The Trade Desk": 7052714,
-      "Vistar Media": 3785338,
+      "Vistar Media": 3785338
     },
     "cookie_reach_updated_at": "2026-01-10T01:16:34Z",
     "ios_reach_updated_at": "2026-01-10T01:33:08Z",
     "android_reach_updated_at": "2026-01-10T01:47:11Z",
     "impressions_90d": 9078000,
     "impressions_prior_90d": 9879000,
+    "media_spend_90d": 81800,
+    "marketplace_revenue_90d": 6970,
     "added_at": "2025-09-30",
     "distribution_rank": 23254,
     "reach_rank": 256,
     "is_highly_distributed": false,
     "is_highly_reachable": true,
     "is_top_n_by_reach": false,
-    "label_keys": [],
+    "label_keys": []
   },
   {
     "dms_segment_id": 1009901101,
@@ -2824,7 +2928,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_platforms": 2,
     "active_platform_names": [
       "Google | Data Marketplace",
-      "Tapad (A part of Experian)",
+      "Tapad (A part of Experian)"
     ],
     "cookie_reach": 3500000,
     "ios_reach": 2773423,
@@ -2833,22 +2937,22 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "input_records": 5174144,
     "reach_by_platform": {
       "Google | Data Marketplace": 2533629,
-      "Tapad (A part of Experian)": 2279837,
+      "Tapad (A part of Experian)": 2279837
     },
     "cookie_reach_updated_at": "2026-01-10T01:10:05Z",
     "ios_reach_updated_at": "2026-01-10T01:40:48Z",
     "android_reach_updated_at": "2026-01-10T01:54:15Z",
     "impressions_90d": 6523000,
     "impressions_prior_90d": 0,
+    "media_spend_90d": 33900,
+    "marketplace_revenue_90d": 7150,
     "added_at": "2026-07-21",
     "distribution_rank": 15899,
     "reach_rank": 55269,
     "is_highly_distributed": false,
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
-    "label_keys": [
-      "newly_added",
-    ],
+    "label_keys": []
   },
   {
     "dms_segment_id": 1009901201,
@@ -2860,7 +2964,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_buyers": 1,
     "active_platforms": 1,
     "active_platform_names": [
-      "Teads",
+      "Teads"
     ],
     "cookie_reach": 2300000,
     "ios_reach": 1412485,
@@ -2868,13 +2972,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "max_connect_reach": 2300000,
     "input_records": 3327889,
     "reach_by_platform": {
-      "Teads": 1256564,
+      "Teads": 1256564
     },
     "cookie_reach_updated_at": "2026-01-10T01:22:16Z",
     "ios_reach_updated_at": "2026-01-10T01:40:50Z",
     "android_reach_updated_at": "2026-01-10T01:53:29Z",
     "impressions_90d": 0,
     "impressions_prior_90d": 2043000,
+    "media_spend_90d": 0,
+    "marketplace_revenue_90d": 0,
     "added_at": "2024-12-11",
     "distribution_rank": 23694,
     "reach_rank": 57444,
@@ -2882,8 +2988,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "dormant",
-    ],
+      "dormant"
+    ]
   },
   {
     "dms_segment_id": 1009901301,
@@ -2898,7 +3004,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "InMarket",
       "MNTN",
       "StackAdapt",
-      "Teads",
+      "Teads"
     ],
     "cookie_reach": 4200000,
     "ios_reach": 2683851,
@@ -2909,13 +3015,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "InMarket": 2740192,
       "MNTN": 3301973,
       "StackAdapt": 1416061,
-      "Teads": 2854804,
+      "Teads": 2854804
     },
     "cookie_reach_updated_at": "2026-01-10T01:15:03Z",
     "ios_reach_updated_at": "2026-01-10T01:34:05Z",
     "android_reach_updated_at": "2026-01-10T01:54:11Z",
     "impressions_90d": 4120000,
     "impressions_prior_90d": 5280000,
+    "media_spend_90d": 42100,
+    "marketplace_revenue_90d": 14990,
     "added_at": "2026-02-19",
     "distribution_rank": 9490,
     "reach_rank": 79992,
@@ -2923,8 +3031,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009901401,
@@ -2937,7 +3045,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_platforms": 2,
     "active_platform_names": [
       "InMarket",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 1900000,
     "ios_reach": 1275152,
@@ -2946,13 +3054,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "input_records": 3525906,
     "reach_by_platform": {
       "InMarket": 1284965,
-      "Xandr": 619080,
+      "Xandr": 619080
     },
     "cookie_reach_updated_at": "2026-01-10T01:12:26Z",
     "ios_reach_updated_at": "2026-01-10T01:36:37Z",
     "android_reach_updated_at": "2026-01-10T01:50:33Z",
     "impressions_90d": 0,
     "impressions_prior_90d": 2279000,
+    "media_spend_90d": 0,
+    "marketplace_revenue_90d": 0,
     "added_at": "2023-12-16",
     "distribution_rank": 25733,
     "reach_rank": 36179,
@@ -2960,8 +3070,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "dormant",
-    ],
+      "dormant"
+    ]
   },
   {
     "dms_segment_id": 1009901501,
@@ -2975,7 +3085,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_platform_names": [
       "InMarket",
       "Magnite DV+ (Rubicon Project)",
-      "Xandr",
+      "Xandr"
     ],
     "cookie_reach": 3100000,
     "ios_reach": 1952021,
@@ -2985,20 +3095,22 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "reach_by_platform": {
       "InMarket": 1851307,
       "Magnite DV+ (Rubicon Project)": 2801971,
-      "Xandr": 2815504,
+      "Xandr": 2815504
     },
     "cookie_reach_updated_at": "2026-01-10T01:10:29Z",
     "ios_reach_updated_at": "2026-01-10T01:35:36Z",
     "android_reach_updated_at": "2026-01-10T01:42:04Z",
     "impressions_90d": 3947000,
     "impressions_prior_90d": 3929000,
+    "media_spend_90d": 20300,
+    "marketplace_revenue_90d": 2490,
     "added_at": "2025-06-18",
     "distribution_rank": 40234,
     "reach_rank": 29938,
     "is_highly_distributed": false,
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
-    "label_keys": [],
+    "label_keys": []
   },
   {
     "dms_segment_id": 1009901601,
@@ -3012,7 +3124,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_platform_names": [
       "DeepIntent",
       "MNTN",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 2700000,
     "ios_reach": 2198499,
@@ -3022,22 +3134,22 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "reach_by_platform": {
       "DeepIntent": 1086845,
       "MNTN": 2273222,
-      "Yahoo! (fka Verizon Media)": 2044712,
+      "Yahoo! (fka Verizon Media)": 2044712
     },
     "cookie_reach_updated_at": "2026-01-10T01:10:42Z",
     "ios_reach_updated_at": "2026-01-10T01:39:35Z",
     "android_reach_updated_at": "2026-01-10T01:45:59Z",
     "impressions_90d": 6517000,
     "impressions_prior_90d": 0,
+    "media_spend_90d": 66100,
+    "marketplace_revenue_90d": 25800,
     "added_at": "2026-06-06",
     "distribution_rank": 48475,
     "reach_rank": 15577,
     "is_highly_distributed": false,
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
-    "label_keys": [
-      "newly_added",
-    ],
+    "label_keys": []
   },
   {
     "dms_segment_id": 1009901701,
@@ -3054,7 +3166,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "MNTN",
       "Nexxen (fka Amobee)",
       "Vistar Media",
-      "Yahoo! (fka Verizon Media)",
+      "Yahoo! (fka Verizon Media)"
     ],
     "cookie_reach": 7900000,
     "ios_reach": 5012762,
@@ -3067,13 +3179,15 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
       "MNTN": 4965275,
       "Nexxen (fka Amobee)": 3659507,
       "Vistar Media": 7033396,
-      "Yahoo! (fka Verizon Media)": 2630852,
+      "Yahoo! (fka Verizon Media)": 2630852
     },
     "cookie_reach_updated_at": "2026-01-10T01:23:53Z",
     "ios_reach_updated_at": "2026-01-10T01:30:02Z",
     "android_reach_updated_at": "2026-01-10T01:41:21Z",
     "impressions_90d": 20415000,
     "impressions_prior_90d": 16613000,
+    "media_spend_90d": 153400,
+    "marketplace_revenue_90d": 49230,
     "added_at": "2024-08-02",
     "distribution_rank": 839,
     "reach_rank": 19146,
@@ -3081,8 +3195,8 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
     "label_keys": [
-      "active_platforms",
-    ],
+      "active_platforms"
+    ]
   },
   {
     "dms_segment_id": 1009901801,
@@ -3096,7 +3210,7 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "active_platform_names": [
       "Nexxen (fka Amobee)",
       "Simpli.fi",
-      "Tapad (A part of Experian)",
+      "Tapad (A part of Experian)"
     ],
     "cookie_reach": 3800000,
     "ios_reach": 2894460,
@@ -3106,20 +3220,22 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
     "reach_by_platform": {
       "Nexxen (fka Amobee)": 3474275,
       "Simpli.fi": 2846818,
-      "Tapad (A part of Experian)": 1508164,
+      "Tapad (A part of Experian)": 1508164
     },
     "cookie_reach_updated_at": "2026-01-10T01:11:53Z",
     "ios_reach_updated_at": "2026-01-10T01:31:37Z",
     "android_reach_updated_at": "2026-01-10T01:49:09Z",
     "impressions_90d": 3816000,
     "impressions_prior_90d": 4406000,
+    "media_spend_90d": 40500,
+    "marketplace_revenue_90d": 14220,
     "added_at": "2025-11-27",
     "distribution_rank": 33166,
     "reach_rank": 18704,
     "is_highly_distributed": false,
     "is_highly_reachable": false,
     "is_top_n_by_reach": false,
-    "label_keys": [],
+    "label_keys": []
   },
 ]
 
@@ -3134,23 +3250,23 @@ export const CATALOG_ROWS: SegmentFeatureRow[] = [
  */
 export const LABEL_VOCABULARY: SegmentLabelRow[] = [
   {
-    "label_key": "top_performance",
-    "display_name": "Top performance",
-    "description": "Among the catalogue's most-reached segments.",
-    "category": "performance",
+    "label_key": "top_campaign_spend",
+    "display_name": "Top campaign spend",
+    "description": "Top 5% by media spend running against the segment — buyers are putting real budget behind it, not just testing it.",
+    "category": "demand",
     "priority": 1,
   },
   {
     "label_key": "best_seller",
     "display_name": "Best seller",
-    "description": "In the top 10% of the catalogue by active buyers (10+ buyers with it enabled).",
-    "category": "demand",
+    "description": "Top 5% of its category cohort by Marketplace revenue over 90 days, with 5 or more buyers.",
+    "category": "performance",
     "priority": 2,
   },
   {
-    "label_key": "top_impressions",
-    "display_name": "Top 10% by Impressions",
-    "description": "Top 10% of the catalogue by impressions delivered in the last 90 days.",
+    "label_key": "most_impressions",
+    "display_name": "Most impressions",
+    "description": "Top 5% by delivered impressions in its cohort. High delivery relative to reach means the segment matches well at the destination.",
     "category": "performance",
     "priority": 3,
   },
@@ -3163,23 +3279,16 @@ export const LABEL_VOCABULARY: SegmentLabelRow[] = [
   },
   {
     "label_key": "new_addition_trending",
-    "display_name": "New addition and Trending",
-    "description": "Added in the last 90 days and already delivering at or above the catalogue median.",
+    "display_name": "Newly Added & Trending",
+    "description": "Added in the last 90 days, with 5 or more buyers already on it.",
     "category": "lifecycle",
     "priority": 5,
   },
   {
-    "label_key": "newly_added",
-    "display_name": "Newly Added",
-    "description": "Added to the marketplace in the last 90 days.",
-    "category": "lifecycle",
-    "priority": 6,
-  },
-  {
     "label_key": "dormant",
     "display_name": "Dormant",
-    "description": "Distributed, but delivered no impressions in the last 90 days.",
+    "description": "Added more than 6 months ago and not running on any platform.",
     "category": "attention",
-    "priority": 7,
+    "priority": 6,
   },
 ]

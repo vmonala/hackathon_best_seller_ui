@@ -9,6 +9,11 @@ import { BRAND_LOGOS, type BrandLogo } from './destinationLogos'
 /**
  * How each label is drawn: its wording, its mark, and its chip tone.
  *
+ * The marks are picked to read as what they measure at badge size, without a
+ * legend: `$` money behind the segment, `★` the cohort's top earner, `▮` a bar
+ * of delivered volume, `◈` one segment faceted across many platforms, `▲` a
+ * rising newcomer, `◌` an empty ring for a segment delivering nothing.
+ *
  * One table for the whole vocabulary — there is no separate tag styling
  * anymore. `text` is the badge's full wording and `short` is what fits in the
  * pinned table column. `active_platforms` is usually drawn by `PlatformBadge`
@@ -19,23 +24,23 @@ export const LABEL_META: Record<
   SegmentLabel,
   { text: string; short: string; icon: string; className: string }
 > = {
-  top_performance: {
-    text: 'Top performance',
-    short: 'Top performance',
-    icon: '★',
-    className: 'bdg-top',
+  top_campaign_spend: {
+    text: 'Top campaign spend',
+    short: 'Top spend',
+    icon: '$',
+    className: 'bdg-spend',
   },
   best_seller: {
     text: 'Best seller',
     short: 'Best seller',
-    icon: '✦',
-    className: 'bdg-reuse',
+    icon: '★',
+    className: 'bdg-top',
   },
-  top_impressions: {
-    text: 'Top 10% by Impressions',
-    short: 'Top 10% impressions',
+  most_impressions: {
+    text: 'Most impressions',
+    short: 'Most impressions',
     icon: '▮',
-    className: 'bdg-trend',
+    className: 'bdg-imp',
   },
   active_platforms: {
     text: 'Active on 4+ platforms',
@@ -44,16 +49,10 @@ export const LABEL_META: Record<
     className: 'bdg-multi',
   },
   new_addition_trending: {
-    text: 'New addition and Trending',
+    text: 'Newly Added & Trending',
     short: 'New & trending',
     icon: '▲',
     className: 'bdg-new',
-  },
-  newly_added: {
-    text: 'Newly Added',
-    short: 'Newly added',
-    icon: '⊕',
-    className: 'bdg-fresh',
   },
   dormant: {
     text: 'Dormant',
@@ -64,13 +63,20 @@ export const LABEL_META: Record<
 }
 
 /**
+ * The vocabulary in priority order — `LABEL_META`'s own key order, which is the
+ * order the backend's `priority` field puts them in. Used to rank a segment's
+ * label set when the table groups by labels.
+ */
+export const LABEL_ORDER = Object.keys(LABEL_META) as SegmentLabel[]
+
+/**
  * Tone and mark by label category. Only reached by a label key the vocabulary
  * has grown but `LABEL_META` has not — a new key still draws something sensible
  * rather than an unstyled chip.
  */
 const CATEGORY_FALLBACK: Record<string, { className: string; icon: string }> = {
   performance: { className: 'bdg-top', icon: '★' },
-  demand: { className: 'bdg-reuse', icon: '✦' },
+  demand: { className: 'bdg-spend', icon: '$' },
   distribution: { className: 'bdg-multi', icon: '◈' },
   lifecycle: { className: 'bdg-fresh', icon: '⊕' },
   attention: { className: 'bdg-dormant', icon: '◌' },

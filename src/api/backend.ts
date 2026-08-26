@@ -24,8 +24,8 @@
  * revenue-derived figure. `adapters/catalog.ts` documents what the UI does
  * about the columns that used to read from it.
  *
- * The three delivered-usage and lifecycle fields below *are* on the row, but
- * they are generated for the fixture rather than captured — see the module
+ * The delivered-usage, commercial and lifecycle fields below *are* on the row,
+ * but they are generated for the fixture rather than captured — see the module
  * docblock in `mock/catalogRows.ts`.
  */
 export interface SegmentFeatureRow {
@@ -69,6 +69,10 @@ export interface SegmentFeatureRow {
    * window — not that nothing delivered.
    */
   impressions_prior_90d: number
+  /** Buy-side media spend running against the segment in the last 90 days, USD. */
+  media_spend_90d: number
+  /** Marketplace revenue the segment earned in the last 90 days, USD. */
+  marketplace_revenue_90d: number
   /** ISO date the segment was added to the marketplace, e.g. "2026-06-27". */
   added_at: string
 
@@ -98,8 +102,8 @@ export interface SegmentLabelRow {
   label_key: string
   display_name: string
   /**
-   * The *criteria* — what has to be true to earn it, e.g. "In the top 10% of
-   * the catalogue by active buyers". The per-segment reason, quoting that
+   * The *criteria* — what has to be true to earn it, e.g. "Top 5% of its
+   * category cohort by Marketplace revenue". The per-segment reason, quoting that
    * segment's own numbers, is built by `explainLabel` in
    * `adapters/catalog.ts`.
    */

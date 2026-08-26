@@ -88,17 +88,16 @@ draws them in. Each is awarded from one rule, and every award must come with the
 
 | Value | Displayed as | Awarded when |
 | --- | --- | --- |
-| `top_performance` | Top performance | Among the catalogue's most-reached segments |
-| `best_seller` | Best seller | Top 10% of the catalogue by active buyers |
-| `top_impressions` | Top 10% by Impressions | Top 10% by impressions delivered in the last 90 days |
+| `top_campaign_spend` | Top campaign spend | Top 5% by media spend running against the segment |
+| `best_seller` | Best seller | Top 5% of its category cohort by Marketplace revenue over 90 days, with 5 or more buyers |
+| `most_impressions` | Most impressions | Top 5% by delivered impressions in its cohort |
 | `active_platforms` | Active on 4+ platforms | Distributed to 4 or more ad platforms |
-| `new_addition_trending` | New addition and Trending | Added in the last 90 days, already at or above the catalogue's median impressions |
-| `newly_added` | Newly Added | Added in the last 90 days |
-| `dormant` | Dormant | Distributed, but delivered no impressions in the last 90 days |
+| `new_addition_trending` | Newly Added & Trending | Added in the last 90 days, with 5 or more buyers already on it |
+| `dormant` | Dormant | Added more than 6 months ago and not running on any platform |
 
-`newly_added` and `new_addition_trending` are mutually exclusive: a segment
-inside the 90-day window earns the trending variant if it is already at or above
-the median, the plain one otherwise, never both.
+A **cohort** is the segment's two-token taxonomy branch, e.g.
+`Retail > Consumer Electronics`. The 5% cut rounds up, so a small cohort still
+awards one winner.
 
 `active_platforms` is drawn by the UI as **"Activated in N platforms"**, naming
 the segment's own `platformCount` rather than the 4-platform threshold. The
@@ -322,7 +321,7 @@ Every field of `Segment` (§3), plus:
 | --- | --- | --- | --- |
 | `label` | `SegmentLabel` | yes | |
 | `earned` | bool | yes | `false` entries render as greyed "not earned" rows |
-| `explanation` | string | yes | Why it was or wasn't earned, in the segment's own numbers — `"10 buyers have it enabled — the catalogue's top 10% starts at 10"`. Supports `**bold**`. For an earned label this should match the segment's `labelReasons` entry |
+| `explanation` | string | yes | Why it was or wasn't earned, in the segment's own numbers — `"$9,400 of Marketplace revenue over 90 days — the top 5% of its cohort starts at $4,120"`. Supports `**bold**`. For an earned label this should match the segment's `labelReasons` entry |
 
 ### `EvidenceQuality`
 
@@ -491,12 +490,11 @@ class CamelModel(BaseModel):
 
 
 SegmentLabel = Literal[
-    "top_performance",
+    "top_campaign_spend",
     "best_seller",
-    "top_impressions",
+    "most_impressions",
     "active_platforms",
     "new_addition_trending",
-    "newly_added",
     "dormant",
 ]
 DestinationId = Literal[
@@ -720,8 +718,8 @@ cut-off it beat:
 
 ```json
 "labelReasons": {
-  "best_seller": "**10** buyers have this segment enabled — the catalogue's **top 10%** starts at 10.",
-  "top_impressions": "**43,007,000** impressions delivered in the last 90 days — the catalogue's **top 10%** starts at 37,506,000."
+  "best_seller": "**$9,400** of Marketplace revenue over 90 days, across **7** buyers — the **top 5%** of Retail > Consumer Electronics starts at $4,120.",
+  "most_impressions": "**43,007,000** impressions delivered in the last 90 days — the **top 5%** of Retail > Consumer Electronics starts at 37,506,000. It matches well at the destination."
 }
 ```
 
@@ -731,8 +729,9 @@ That breakdown is what the "How it earned its labels" panel renders.
 
 ### Percentile cut-offs
 
-`best_seller` and `top_impressions` are top-decile cut-offs, and
-`new_addition_trending` is measured against the median. Compute all three over
-the **whole catalogue**, not over the page being served, and hold them steady
+`top_campaign_spend` is a top-5% cut over the **whole catalogue**; `best_seller`
+and `most_impressions` are top-5% cuts **within the segment's cohort**, with the
+cut rounded up so a small cohort still awards a winner. Compute them over the
+whole catalogue, not over the page being served, and hold them steady
 for the request — a cut-off that moves between the list route and the detail
 route lets a chip and its own explanation disagree.
