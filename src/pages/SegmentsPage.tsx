@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAskDiscovery, useFacets, useSegmentIntel, useSegments } from '@/api/queries'
-import type { SegmentTag, SortKey } from '@/api/types'
+import { useAskDiscovery, useFacets, useSegments } from '@/api/queries'
+import type { SortKey } from '@/api/types'
 import { useSegmentQueryParams } from '@/lib/useSegmentQueryParams'
 import { FilterBar } from '@/components/FilterBar'
 import { FilterChips } from '@/components/FilterChips'
@@ -53,27 +53,9 @@ export function SegmentsPage() {
     return items.filter((s) => ids.has(s.id))
   }, [data?.items, showingAiResults, aiCandidateIds])
 
-  // Tags (and, when enabled, measured reach) come from the Segment Intelligence
-  // API — a second backend, fetched per visible row after the table has painted.
-  const rowIds = useMemo(() => pageRows.map((s) => s.id), [pageRows])
-  const { data: intel } = useSegmentIntel(rowIds)
-
-  const tagsById = useMemo(() => {
-    const map = new Map<string, SegmentTag[]>()
-    intel?.forEach((v, id) => map.set(id, v.tags))
-    return map
-  }, [intel])
-
-  // Measured reach replaces the figures the catalog adapter derives. Off unless
-  // VITE_TAGS_REACH is set and the API serves the row route, so this is usually
-  // the identity mapping.
-  const rows = useMemo(() => {
-    if (!intel) return pageRows
-    return pageRows.map((s) => {
-      const reach = intel.get(s.id)?.reach
-      return reach ? { ...s, ...reach, reachMeasured: true } : s
-    })
-  }, [pageRows, intel])
+  // Labels, their reasons and measured reach all ride along on the row now, so
+  // there is nothing left to fetch per visible row.
+  const rows = pageRows
 
   const toggleRow = useCallback((id: string) => {
     setSelected((prev) => {
@@ -135,7 +117,7 @@ export function SegmentsPage() {
         <h1 className="m-0 flex items-start gap-1.5 text-[38px] font-bold leading-tight tracking-[-0.6px]">
           Data Marketplace Segments
           <span
-            title="Labels are computed from aggregated, delivered marketplace usage."
+            title="Labels are computed from a segment's marketplace footprint: how many buyers and platforms have it enabled, and how far its measured reach extends."
             className="mt-1 flex h-[15px] w-[15px] cursor-help items-center justify-center rounded-full bg-[#2F80ED] text-[10px] font-bold text-white"
           >
             ?
@@ -174,7 +156,6 @@ export function SegmentsPage() {
             query={query}
             facets={facets}
             onToggle={toggleIn}
-            onUpdate={update}
             onClearAll={clearAll}
           />
         )}
@@ -197,7 +178,6 @@ export function SegmentsPage() {
             onOpenSegment={openSegment}
             activeSegmentId={activeSegmentId}
             onViewFullDetails={(id) => navigate(`/segments/${id}`)}
-            tagsById={tagsById}
           />
         )}
 
@@ -243,6 +223,7 @@ export function SegmentsPage() {
         <DiscoveryPanel
           onClose={() => setDiscoveryOpen(false)}
           onAsk={(q) => discovery.mutate(q)}
+          onReset={discovery.reset}
           isPending={discovery.isPending}
           result={discovery.data}
           error={discovery.error as Error | null}

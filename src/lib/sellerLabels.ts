@@ -16,7 +16,7 @@ export const SELLER_LABEL_META: Record<SellerLabel, SellerLabelMeta> = {
     kind: 'demand',
     className: 'bdg-best',
     criteria:
-      'Top 10% of your catalogue and of its category cohort by Marketplace revenue over 90 days, with 5 or more buyers.',
+      'Top 5% of its category cohort by Marketplace revenue over 90 days, with 5 or more buyers.',
   },
   top_campaign_spend: {
     text: 'Top campaign spend',
@@ -24,15 +24,15 @@ export const SELLER_LABEL_META: Record<SellerLabel, SellerLabelMeta> = {
     kind: 'demand',
     className: 'bdg-spend',
     criteria:
-      'Top 10% by media spend running against the segment — buyers are putting real budget behind it, not just testing it.',
+      'Top 5% by media spend running against the segment — buyers are putting real budget behind it, not just testing it.',
   },
   most_impressions: {
     text: 'Most impressions',
-    icon: '◤',
+    icon: '▮',
     kind: 'demand',
     className: 'bdg-imp',
     criteria:
-      'Top 10% by delivered impressions in its cohort. High delivery relative to reach means the segment matches well at the destination.',
+      'Top 5% by delivered impressions in its cohort. High delivery relative to reach means the segment matches well at the destination.',
   },
   multi_platform: {
     text: 'Multi-platform',

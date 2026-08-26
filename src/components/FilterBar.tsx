@@ -1,24 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FacetOption, SegmentFacets, SegmentQuery } from '@/api/types'
-import type { DestinationId, PerformanceLabel } from '@/api/types'
-import { useTagVocabulary } from '@/api/queries'
-import { TAGS_ENABLED } from '@/api/config'
+import type { DestinationId, SegmentLabel } from '@/api/types'
 import type { FilterKey } from '@/lib/useSegmentQueryParams'
-import { tagIcon } from '@/lib/labels'
+import { LABEL_META } from '@/lib/labels'
 import { FacetDropdown } from './FacetDropdown'
 import { cn } from '@/lib/cn'
 
-/**
- * Performance labels and segment tags read as one list — both answer "how has
- * this segment actually done" — but they come from different backends and
- * different query keys, so their option values are namespaced.
- */
-const LABEL_PREFIX = 'label:'
-const TAG_PREFIX = 'tag:'
-
-const PERFORMANCE_HINT = TAGS_ENABLED
-  ? 'Labels are earned from delivered usage across LiveRamp destinations over the last 90 days; tags are awarded from catalogue-wide cut-offs on distribution, reach and platform breadth. Picking more labels widens the results; picking more tags narrows them.'
-  : 'Labels are earned from delivered usage across LiveRamp destinations over the last 90 days. Updated weekly.'
+const LABELS_HINT =
+  'Labels are awarded from catalogue-wide cut-offs on measured reach, active buyers, impressions delivered in the last 90 days, platform breadth and how recently the segment was added. Each option names its own criteria on hover; picking more labels widens the results.'
 
 interface FilterBarProps {
   query: SegmentQuery
@@ -41,45 +30,16 @@ export function FilterBar({
 }: FilterBarProps) {
   const [search, setSearch] = useState(query.search ?? '')
 
-  // Tags are the Segment Intelligence API's vocabulary, not a catalog facet, so
-  // they arrive on their own and are absent in mock mode.
-  const { data: tags, isLoading: tagsLoading } = useTagVocabulary()
-
-  /**
-   * Labels and tags share one heading in the dropdown but live on different
-   * query keys, so each option carries the key it belongs to as a prefix and
-   * `togglePerformance` routes it back. Labels come first — they are the
-   * catalog's own vocabulary — with the tags service's badges beneath them.
-   */
-  const performanceOptions = useMemo<FacetOption[]>(
-    () => [
-      ...(facets?.performanceLabels ?? []).map((o) => ({
+  // One list now: labels are the catalogue's whole vocabulary, counted over the
+  // same rows the table pages through, with each option's criteria as its hint.
+  const labelOptions = useMemo<FacetOption[]>(
+    () =>
+      (facets?.labels ?? []).map((o) => ({
         ...o,
-        value: `${LABEL_PREFIX}${o.value}`,
+        label: `${LABEL_META[o.value].icon} ${o.label}`,
       })),
-      ...(TAGS_ENABLED ? (tags ?? []) : []).map((t) => ({
-        value: `${TAG_PREFIX}${t.key}`,
-        label: `${tagIcon(t)} ${t.name}`,
-        // No count: the tags service counts over its own ~198k-row catalog,
-        // which is not the set this table pages through.
-        hint: t.description,
-      })),
-    ],
-    [facets?.performanceLabels, tags],
+    [facets?.labels],
   )
-
-  const performanceSelected = useMemo(
-    () => [
-      ...(query.labels ?? []).map((l) => `${LABEL_PREFIX}${l}`),
-      ...(query.tags ?? []).map((t) => `${TAG_PREFIX}${t}`),
-    ],
-    [query.labels, query.tags],
-  )
-
-  const togglePerformance = (value: string) =>
-    value.startsWith(TAG_PREFIX)
-      ? onToggle('tags', value.slice(TAG_PREFIX.length))
-      : onToggle('labels', value.slice(LABEL_PREFIX.length) as PerformanceLabel)
 
   // Debounce typing so we do not refetch on every keystroke.
   useEffect(() => {
@@ -175,22 +135,21 @@ export function FilterBar({
           }
           sections={[
             {
-              title: 'Marketplace performance',
-              hint: PERFORMANCE_HINT,
-              options: performanceOptions,
-              loading: tagsLoading,
-              selected: performanceSelected,
-              onToggle: togglePerformance,
+              title: 'Segment labels',
+              hint: LABELS_HINT,
+              options: labelOptions,
+              selected: query.labels ?? [],
+              onToggle: (v) => onToggle('labels', v as SegmentLabel),
             },
             {
               title: 'Proven on destination',
-              hint: 'Only shows segments with delivered impressions on the platforms you select.',
+              hint: 'Only shows segments actively distributed to the platforms you select.',
               options: facets?.destinations ?? [],
               selected: query.destinations ?? [],
               onToggle: (v) => onToggle('destinations', v as DestinationId),
             },
           ]}
-          onClearAll={() => onUpdate({ labels: [], tags: [], destinations: [] })}
+          onClearAll={() => onUpdate({ labels: [], destinations: [] })}
         />
       )}
 

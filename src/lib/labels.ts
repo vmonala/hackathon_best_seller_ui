@@ -1,74 +1,103 @@
 import type {
   DestinationId,
   KnownDestinationId,
-  PerformanceLabel,
+  SegmentLabel,
   UsageLevel,
 } from '@/api/types'
 import { BRAND_LOGOS, type BrandLogo } from './destinationLogos'
 
+/**
+ * How each label is drawn: its wording, its mark, and its chip tone.
+ *
+ * The marks are picked to read as what they measure at badge size, without a
+ * legend: `$` money behind the segment, `★` the cohort's top earner, `▮` a bar
+ * of delivered volume, `◈` one segment faceted across many platforms, `▲` a
+ * rising newcomer, `◌` an empty ring for a segment delivering nothing.
+ *
+ * One table for the whole vocabulary — there is no separate tag styling
+ * anymore. `text` is the badge's full wording and `short` is what fits in the
+ * pinned table column. `active_platforms` is usually drawn by `PlatformBadge`
+ * instead, which names the segment's own platform count rather than the
+ * threshold; its wording here is what the filter and the criteria list use.
+ */
 export const LABEL_META: Record<
-  PerformanceLabel,
+  SegmentLabel,
   { text: string; short: string; icon: string; className: string }
 > = {
-  top_performer: {
-    text: 'Top performer',
-    short: 'Top performer',
+  top_campaign_spend: {
+    text: 'Top campaign spend',
+    short: 'Top spend',
+    icon: '$',
+    className: 'bdg-spend',
+  },
+  best_seller: {
+    text: 'Best seller',
+    short: 'Best seller',
     icon: '★',
     className: 'bdg-top',
   },
-  frequently_reused: {
-    text: 'Frequently reused',
-    short: 'Reused',
-    icon: '↻',
-    className: 'bdg-reuse',
+  most_impressions: {
+    text: 'Most impressions',
+    short: 'Most impressions',
+    icon: '▮',
+    className: 'bdg-imp',
   },
-  trending_up: {
-    text: 'Trending up',
-    short: 'Trending',
-    icon: '▲',
-    className: 'bdg-trend',
-  },
-  proven_multi_platform: {
-    text: 'Proven multi-platform',
+  active_platforms: {
+    text: 'Active on 4+ platforms',
     short: 'Multi-platform',
     icon: '◈',
     className: 'bdg-multi',
   },
-  new_gaining_traction: {
-    text: 'New & gaining traction',
-    short: 'New',
-    icon: '✦',
+  new_addition_trending: {
+    text: 'Newly Added & Trending',
+    short: 'New & trending',
+    icon: '▲',
     className: 'bdg-new',
+  },
+  dormant: {
+    text: 'Dormant',
+    short: 'Dormant',
+    icon: '◌',
+    className: 'bdg-dormant',
   },
 }
 
 /**
- * Glyphs for the Segment Intelligence tags. The API sends no icon, so the mark
- * is chosen here from the tag's slug, with a per-category fallback so a tag
- * added to the vocabulary later still draws something sensible.
+ * The vocabulary in priority order — `LABEL_META`'s own key order, which is the
+ * order the backend's `priority` field puts them in. Used to rank a segment's
+ * label set when the table groups by labels.
  */
-const TAG_ICONS: Record<string, string> = {
-  top_facebook_activated: '◉',
-  top_ttd_activated: '◉',
-  top_google_activated: '◉',
-  multi_platform_powerhouse: '◈',
-  high_ios_reach: '▲',
-  high_android_reach: '▲',
-  massive_cookie_scale: '◎',
-  cross_device_champion: '⇄',
-  highly_distributed: '⇗',
-  buyer_magnet: '✦',
-  broad_platform_breadth: '◇',
+export const LABEL_ORDER = Object.keys(LABEL_META) as SegmentLabel[]
+
+/**
+ * Tone and mark by label category. Only reached by a label key the vocabulary
+ * has grown but `LABEL_META` has not — a new key still draws something sensible
+ * rather than an unstyled chip.
+ */
+const CATEGORY_FALLBACK: Record<string, { className: string; icon: string }> = {
+  performance: { className: 'bdg-top', icon: '★' },
+  demand: { className: 'bdg-spend', icon: '$' },
+  distribution: { className: 'bdg-multi', icon: '◈' },
+  lifecycle: { className: 'bdg-fresh', icon: '⊕' },
+  attention: { className: 'bdg-dormant', icon: '◌' },
 }
 
-const TAG_CATEGORY_ICONS: Record<string, string> = {
-  platform: '◈',
-  reach: '◎',
-  distribution: '⇗',
+/** The mark for a label, by key, falling back to its category. */
+export function labelIcon(label: { key: string; category: string }): string {
+  return (
+    LABEL_META[label.key as SegmentLabel]?.icon ??
+    CATEGORY_FALLBACK[label.category]?.icon ??
+    '•'
+  )
 }
 
-export function tagIcon(tag: { key: string; category: string }): string {
-  return TAG_ICONS[tag.key] ?? TAG_CATEGORY_ICONS[tag.category] ?? '•'
+/** The chip tone for a label, by key, falling back to its category. */
+export function labelTone(label: { key: string; category: string }): string {
+  return (
+    LABEL_META[label.key as SegmentLabel]?.className ??
+    CATEGORY_FALLBACK[label.category]?.className ??
+    'bdg-neutral'
+  )
 }
 
 export interface DestinationMeta {

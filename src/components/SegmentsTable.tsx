@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
 import * as Popover from '@radix-ui/react-popover'
-import type { Segment, SegmentTag, SortKey } from '@/api/types'
+import type { Segment, SortKey } from '@/api/types'
 import { Checkbox } from './Checkbox'
 import { LabelBadge, PlatformBadge } from './Badge'
-import { TagChip } from './TagChip'
 import { DestinationDots } from './DestinationDots'
 import { formatDate, formatReach } from '@/lib/labels'
 import {
@@ -11,7 +10,6 @@ import {
   METRIC_LABELS,
   REAL_REACH_METRICS,
   SHOW_CATALOG_METRICS,
-  SHOW_DATE_ADDED,
 } from '@/lib/metricLabels'
 import { cn } from '@/lib/cn'
 
@@ -28,21 +26,22 @@ interface MetricColumn {
   header: string
   width: number
   /**
-   * Whether the current API mode reports this field at all. A column without
-   * data stays in the picker — so nothing is silently missing — but starts
-   * hidden rather than filling the table with dashes.
+   * Whether the catalogue reports this field at all. A column without data
+   * stays in the picker — so nothing is silently missing — but starts hidden
+   * rather than filling the table with dashes.
    */
   hasData: boolean
   /** Checked by default in the picker. */
   defaultVisible: boolean
   /**
-   * Catalogue attribute rather than delivered usage. In live mode these carry a
-   * derived stand-in, so they are tagged as estimates wherever they appear.
+   * A commercial attribute — rate card, CPC, media share, created date — that
+   * the catalogue does not report. These carry a derived stand-in, so they are
+   * tagged as estimates wherever they appear.
    */
   catalogAttribute?: boolean
   /**
-   * Device-level reach or input records — derived today, but measured once the
-   * tags API supplies them, which flips `catalogAttribute` off at render time.
+   * Cookie, device-level or input-record reach. Measured off the catalogue row,
+   * so these are never counted as estimates in the footnote.
    */
   reachMetric?: boolean
   sortKey?: SortKey
@@ -87,25 +86,30 @@ const METRIC_COLUMNS: MetricColumn[] = [
     id: 'pctMedia',
     header: METRIC_LABELS.pctMedia,
     width: 168,
-    hasData: true,
-    defaultVisible: true,
+    hasData: SHOW_CATALOG_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS,
+    catalogAttribute: true,
     cell: (s) => pct(s.advertiserDirectPctOfMedia),
   },
   {
     id: 'cpc',
     header: METRIC_LABELS.cpc,
     width: 92,
-    hasData: true,
-    defaultVisible: true,
+    hasData: SHOW_CATALOG_METRICS,
+    defaultVisible: SHOW_CATALOG_METRICS,
+    catalogAttribute: true,
     sortKey: 'cpc',
     cell: (s) => usd(s.cpc),
   },
+  // The four reach columns are measured values off the catalogue row, so they
+  // are always available and never footnoted as estimates.
   {
     id: 'cookieReach',
     header: METRIC_LABELS.reach,
     width: 104,
     hasData: true,
     defaultVisible: true,
+    reachMetric: true,
     sortKey: 'cookie_reach',
     cell: (s) => reach(s.cookieReach),
   },
@@ -113,9 +117,8 @@ const METRIC_COLUMNS: MetricColumn[] = [
     id: 'iosReach',
     header: 'iOS Reach',
     width: 100,
-    hasData: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
-    defaultVisible: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
-    catalogAttribute: true,
+    hasData: true,
+    defaultVisible: true,
     reachMetric: true,
     cell: (s) => reach(s.iosReach),
   },
@@ -123,9 +126,8 @@ const METRIC_COLUMNS: MetricColumn[] = [
     id: 'androidReach',
     header: 'Android Reach',
     width: 112,
-    hasData: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
-    defaultVisible: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
-    catalogAttribute: true,
+    hasData: true,
+    defaultVisible: true,
     reachMetric: true,
     cell: (s) => reach(s.androidReach),
   },
@@ -133,19 +135,38 @@ const METRIC_COLUMNS: MetricColumn[] = [
     id: 'inputRecords',
     header: 'Input Records',
     width: 110,
-    hasData: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
-    defaultVisible: SHOW_CATALOG_METRICS || REAL_REACH_METRICS,
-    catalogAttribute: true,
+    hasData: true,
+    defaultVisible: true,
     reachMetric: true,
     cell: (s) => reach(s.inputRecords),
+  },
+  // Impressions and Date Added are on the row, so they are neither hidden nor
+  // footnoted — they are what the impressions and lifecycle labels read from,
+  // and a chip claiming "top 5% by impressions" needs the number in reach of
+  // the reader.
+  {
+    id: 'impressions90d',
+    header: METRIC_LABELS.impressions,
+    width: 122,
+    hasData: true,
+    defaultVisible: true,
+    sortKey: 'impressions',
+    cell: (s) => (s.impressions90d == null ? dash : formatReach(s.impressions90d)),
+  },
+  {
+    id: 'impressionsGrowth',
+    header: 'Impressions Δ',
+    width: 108,
+    hasData: true,
+    defaultVisible: false,
+    cell: (s) => <Growth pct={s.impressionsGrowthPct} />,
   },
   {
     id: 'dateAdded',
     header: 'Date Added',
     width: 118,
-    hasData: SHOW_DATE_ADDED,
-    defaultVisible: SHOW_DATE_ADDED,
-    catalogAttribute: true,
+    hasData: true,
+    defaultVisible: true,
     sortKey: 'date_added',
     cell: (s) => formatDate(s.dateAdded),
   },
@@ -163,17 +184,25 @@ const METRIC_COLUMNS: MetricColumn[] = [
 ]
 
 /**
- * Every column is offered in the picker. The live usage feed carries no rate
- * card, no device-level reach, no input record count and no created date, so
- * those columns render "-" there; they are listed as "no data" and start
- * hidden instead of being dropped, which otherwise reads as a missing feature.
+ * Every column is offered in the picker, including any the catalogue cannot
+ * fill. Those are listed as "no data" and start hidden rather than being
+ * dropped, which otherwise reads as a missing feature.
  */
 const AVAILABLE_COLUMNS = METRIC_COLUMNS
 
 const SELECT_WIDTH = 34
-/** Pinned name column: full width, and the narrower one used beside a panel. */
-const NAME_WIDTH = 330
-const NAME_WIDTH_COMPACT = 232
+/** How far the name column can be dragged. */
+const NAME_WIDTH_MIN = 200
+const NAME_WIDTH_MAX = 760
+/**
+ * Pinned name column: it opens at its widest, because the full taxonomy path is
+ * the thing a buyer scans by and truncating it by default hides the only column
+ * that is not a number. Dragging the handle takes width away; it cannot add
+ * any. Beside an open detail panel it starts narrower, where the space is not
+ * there to give.
+ */
+const NAME_WIDTH = NAME_WIDTH_MAX
+const NAME_WIDTH_COMPACT = 360
 const ACTIONS_WIDTH = 44
 
 interface SegmentsTableProps {
@@ -192,11 +221,6 @@ interface SegmentsTableProps {
   activeSegmentId?: string | null
   /** "View full details" in the row menu. */
   onViewFullDetails?: (id: string) => void
-  /**
-   * Segment Intelligence tags by segment id. Loads after the rows do, from a
-   * separate backend, so it is optional — the table renders fine without it.
-   */
-  tagsById?: Map<string, SegmentTag[]>
 }
 
 export function SegmentsTable({
@@ -212,7 +236,6 @@ export function SegmentsTable({
   onOpenSegment,
   activeSegmentId,
   onViewFullDetails,
-  tagsById,
 }: SegmentsTableProps) {
   const [visible, setVisible] = useState<Set<string>>(
     () => new Set(AVAILABLE_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id)),
@@ -224,22 +247,19 @@ export function SegmentsTable({
     [visible],
   )
 
-  // Whether the reach figures on screen are measured rather than derived. The
-  // flag only says the app asked; the rows say whether the API answered, and
-  // the header and the footnote have to agree with the numbers underneath them.
-  const reachMeasured = REAL_REACH_METRICS && rows.some((r) => r.reachMeasured)
-
   // Named in the footnote so it is clear which numbers on screen are derived.
+  // Reach columns are measured and never qualify, whatever else is on show.
   const estimatedShown = ESTIMATED_CATALOG_METRICS
     ? columns
-        .filter((c) => c.catalogAttribute && !(reachMeasured && c.reachMetric))
+        .filter((c) => c.catalogAttribute && !(REAL_REACH_METRICS && c.reachMetric))
         .map((c) => c.header)
     : []
 
-  const headerFor = (c: MetricColumn) =>
-    reachMeasured && c.id === 'cookieReach' ? METRIC_LABELS.reachMeasured : c.header
-
-  const nameWidth = compact ? NAME_WIDTH_COMPACT : NAME_WIDTH
+  // Null until the header's handle is dragged, so the column keeps following
+  // `compact` — narrowing when a panel opens — right up to the first drag.
+  const [nameWidthOverride, setNameWidthOverride] = useState<number | null>(null)
+  const nameWidth =
+    nameWidthOverride ?? (compact ? NAME_WIDTH_COMPACT : NAME_WIDTH)
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.id))
   const someChecked = rows.some((r) => selected.has(r.id))
 
@@ -250,7 +270,7 @@ export function SegmentsTable({
       <div className="mt-10 rounded-lg border border-dashed border-line py-14 text-center">
         <p className="text-sm font-semibold text-ink2">No segments match these filters</p>
         <p className="mt-1 text-[13px] text-muted">
-          Try removing a performance label or destination.
+          Try removing a label or destination.
         </p>
       </div>
     )
@@ -259,12 +279,25 @@ export function SegmentsTable({
   return (
     <div className="relative mt-2.5">
       {/* The gear floats above the scroller so it stays reachable at any
-          horizontal scroll position, like the mockup. */}
-      <ColumnPicker
-        visible={visible}
-        onChange={setVisible}
-        reachMeasured={reachMeasured}
-      />
+          horizontal scroll position, like the mockup. The grouping toggle sits
+          beside it: label grouping is the default order, so there has to be a
+          way back to it after a header click sorts by a metric. */}
+      {onSort && (
+        <button
+          onClick={() => onSort('labels')}
+          aria-pressed={sort === 'labels'}
+          title="Stack segments carrying the same labels together"
+          className={cn(
+            'absolute right-7 top-1.5 z-30 flex h-6 items-center gap-1 rounded px-1.5 text-[11.5px] font-semibold',
+            sort === 'labels'
+              ? 'bg-line2 text-indigo-ink'
+              : 'bg-white text-[#3C4043] hover:text-indigo-ink',
+          )}
+        >
+          ▤ Group by labels
+        </button>
+      )}
+      <ColumnPicker visible={visible} onChange={setVisible} />
 
       <div className="overflow-x-auto">
         {/* border-separate, not border-collapse: a collapsed table drops the
@@ -312,6 +345,11 @@ export function SegmentsTable({
                 sort={sort}
                 direction={direction}
                 onSort={onSort}
+                resize={{
+                  width: nameWidth,
+                  onResize: setNameWidthOverride,
+                  onReset: () => setNameWidthOverride(null),
+                }}
               >
                 Segment Name
               </Th>
@@ -324,7 +362,7 @@ export function SegmentsTable({
                   direction={direction}
                   onSort={onSort}
                 >
-                  {headerFor(c)}
+                  {c.header}
                 </Th>
               ))}
               {/* Sits under the floating gear. */}
@@ -368,7 +406,7 @@ export function SegmentsTable({
                         {s.name}
                       </span>
                     </div>
-                    <RowLabels segment={s} tags={tagsById?.get(s.id)} />
+                    <RowLabels segment={s} />
                   </Td>
                   {columns.map((c) => (
                     <Td key={c.id} compact={compact} active={isActive}>
@@ -397,7 +435,7 @@ export function SegmentsTable({
         <p className="mt-2 text-[11.5px] leading-[1.5] text-muted2">
           {estimatedShown.join(', ')}{' '}
           {estimatedShown.length === 1 ? 'is an estimate' : 'are estimates'} derived
-          from delivered usage — the catalog API does not report{' '}
+          from reach and distribution — the catalogue does not report{' '}
           {estimatedShown.length === 1 ? 'it' : 'them'}.
         </p>
       )}
@@ -406,42 +444,58 @@ export function SegmentsTable({
 }
 
 /**
- * Performance labels and Segment Intelligence tags under a segment name.
+ * The labels under a segment name.
  *
- * Both families are drawn short and capped at two each: full-length badges wrap
- * onto a line each in the pinned column and multiply the height of every row.
- * Segments average about five tags, so most rows overflow. Everything over the
- * caps rolls into a single count — one "+N" per row, never two — and the detail
- * panel lists them all.
+ * One vocabulary now, drawn short and capped at three badges: full-length badges
+ * wrap onto a line each in the pinned column and multiply the height of every
+ * row. `labels` is already in priority order, so the cap keeps the strongest.
+ * Everything over it rolls into a single count, and the detail panel lists them
+ * all with the reason each was awarded.
+ *
+ * `active_platforms` is drawn as `PlatformBadge`, which names the segment's own
+ * platform count rather than the 4-platform threshold — it is the more useful
+ * number.
  */
-const MAX_ROW_BADGES = 2
-const MAX_ROW_TAGS = 2
+const MAX_ROW_BADGES = 3
 
-function RowLabels({ segment, tags }: { segment: Segment; tags?: SegmentTag[] }) {
-  const named = segment.labels.filter((l) => l !== 'proven_multi_platform')
-  const multi = segment.labels.length !== named.length
-  const shownLabels = named.slice(0, multi ? MAX_ROW_BADGES - 1 : MAX_ROW_BADGES)
+function RowLabels({ segment }: { segment: Segment }) {
+  const shown = segment.labels.slice(0, MAX_ROW_BADGES)
+  const hidden = segment.labels.length - shown.length
 
-  // Already sorted by priority in `src/api/tags.ts`, so this is the strongest N.
-  const shownTags = tags?.slice(0, MAX_ROW_TAGS) ?? []
-  const hidden =
-    named.length - shownLabels.length + ((tags?.length ?? 0) - shownTags.length)
-
-  if (segment.labels.length === 0 && shownTags.length === 0) return null
+  if (segment.labels.length === 0) return null
 
   return (
     <div className="mt-[7px] flex flex-wrap items-center gap-1.5">
-      {shownLabels.map((l) => (
-        <LabelBadge key={l} label={l} short />
-      ))}
-      {multi && <PlatformBadge count={segment.platformCount} />}
-      {shownTags.map((t) => (
-        <TagChip key={t.key} tag={t} />
-      ))}
+      {shown.map((l) =>
+        l === 'active_platforms' ? (
+          <PlatformBadge
+            key={l}
+            count={segment.platformCount}
+            reason={segment.labelReasons.active_platforms}
+          />
+        ) : (
+          <LabelBadge key={l} label={l} short reason={segment.labelReasons[l]} />
+        ),
+      )}
       {hidden > 0 && (
         <span className="text-[11px] font-semibold text-muted2">+{hidden}</span>
       )}
     </div>
+  )
+}
+
+/**
+ * Period-on-period change in impressions. Absent for a segment newer than the
+ * prior window, which has no baseline to compare against — that reads as "-",
+ * not as 0%.
+ */
+function Growth({ pct }: { pct?: number }) {
+  if (pct == null) return dash
+  if (pct === 0) return <span className="text-muted">0%</span>
+  return (
+    <span className={pct > 0 ? 'font-semibold text-green-deep' : 'text-[#B3261E]'}>
+      {pct > 0 ? '▲' : '▼'} {Math.abs(pct)}%
+    </span>
   )
 }
 
@@ -459,6 +513,7 @@ function Th({
   sort,
   direction,
   onSort,
+  resize,
 }: {
   children?: React.ReactNode
   pinned?: boolean
@@ -469,13 +524,19 @@ function Th({
   sort?: SortKey
   direction?: 'asc' | 'desc'
   onSort?: (key: SortKey) => void
+  /** Makes the column draggable by its right edge. */
+  resize?: ResizeHandleProps
 }) {
   const sortable = Boolean(sortKey && onSort)
   return (
     <th
       style={pinned ? { left } : undefined}
       className={cn(
-        'border-b-[1.5px] border-[#C9CDD3] bg-white px-2.5 py-3 text-left align-bottom text-[12.5px] font-bold leading-[1.25] text-[#202124]',
+        // The metrics are centred under their headers; the pinned block —
+        // checkbox and Segment Name — stays left, because a taxonomy path that
+        // starts at a different x on every row cannot be scanned.
+        'border-b-[1.5px] border-[#C9CDD3] bg-white px-2.5 py-3 align-bottom text-[12.5px] font-bold leading-[1.25] text-[#202124]',
+        pinned ? 'text-left' : 'text-center',
         compact && 'text-[11.5px]',
         pinned && 'sticky z-20',
         divider && 'border-r border-r-line',
@@ -489,7 +550,68 @@ function Th({
           {direction === 'asc' ? '▲' : '▼'}
         </span>
       )}
+      {resize && <ResizeHandle {...resize} />}
     </th>
+  )
+}
+
+interface ResizeHandleProps {
+  /** The column's current width, which the drag is measured from. */
+  width: number
+  onResize: (width: number) => void
+  /** Double-click hands the width back to the default. */
+  onReset: () => void
+}
+
+/**
+ * Drag the column's right edge to rewidth it.
+ *
+ * The pointer is captured on the handle, so the drag keeps tracking after it
+ * leaves the 7px strip — a resize that stops the moment the cursor drifts off
+ * the edge is unusable. `stopPropagation` keeps the drag off the header's sort
+ * handler, which the handle sits inside of.
+ */
+function ResizeHandle({ width, onResize, onReset }: ResizeHandleProps) {
+  const onPointerDown = (e: React.PointerEvent<HTMLSpanElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const handle = e.currentTarget
+    const startX = e.clientX
+    handle.setPointerCapture(e.pointerId)
+
+    const move = (ev: PointerEvent) =>
+      onResize(
+        Math.min(
+          NAME_WIDTH_MAX,
+          Math.max(NAME_WIDTH_MIN, width + ev.clientX - startX),
+        ),
+      )
+    const up = () => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', up)
+      handle.removeEventListener('pointercancel', up)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', up)
+    handle.addEventListener('pointercancel', up)
+  }
+
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize Segment Name column"
+      title="Drag to resize — double-click to reset"
+      onPointerDown={onPointerDown}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => {
+        e.stopPropagation()
+        onReset()
+      }}
+      className="group absolute right-[-3px] top-0 z-30 flex h-full w-[7px] cursor-col-resize touch-none items-stretch justify-center"
+    >
+      <span className="w-[1.5px] bg-transparent transition-colors group-hover:bg-indigo" />
+    </span>
   )
 }
 
@@ -513,6 +635,7 @@ function Td({
       style={pinned ? { left } : undefined}
       className={cn(
         'border-b border-line2 px-2.5 py-3 align-top text-[13.5px] tabular-nums',
+        pinned ? 'text-left' : 'text-center',
         compact && 'text-[12.5px]',
         // A pinned cell scrolls over the metrics, so it needs its own opaque
         // background — including the row states, which would otherwise show
@@ -530,12 +653,9 @@ function Td({
 function ColumnPicker({
   visible,
   onChange,
-  reachMeasured,
 }: {
   visible: Set<string>
   onChange: (next: Set<string>) => void
-  /** Reach is measured, so those columns are no longer tagged "estimated". */
-  reachMeasured: boolean
 }) {
   const toggle = (id: string) => {
     const next = new Set(visible)
@@ -582,7 +702,7 @@ function ColumnPicker({
                   <span className="text-[11px] text-muted2">no data</span>
                 ) : c.catalogAttribute &&
                   ESTIMATED_CATALOG_METRICS &&
-                  !(reachMeasured && c.reachMetric) ? (
+                  !(REAL_REACH_METRICS && c.reachMetric) ? (
                   <span className="text-[11px] text-muted2">estimated</span>
                 ) : null}
               </button>

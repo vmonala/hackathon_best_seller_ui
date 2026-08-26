@@ -73,7 +73,7 @@ export function DestinationDots({
   const rest = destinations.slice(shown.length)
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center justify-center gap-1">
       {shown.map((d) => (
         <DestinationChip
           key={d.destination}

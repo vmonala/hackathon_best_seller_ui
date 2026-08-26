@@ -1,13 +1,32 @@
 # Backend API contract
 
-Everything this UI needs from the backend, endpoint by endpoint and field by
-field. The frontend is already written against these routes
-(`src/api/live.ts`); building a service that matches this document is enough to
-switch the app off mock data with a single environment variable.
+> **Status: not currently called.** As of 2026-08-26 this UI issues no HTTP
+> requests. The marketplace catalogue lives in `src/api/mock/catalogRows.ts` —
+> 68 rows: the data team's `smartwatch_segments.csv` dump (50) plus the earlier
+> capture of `GET :8000/v1/segments` (18, renumbered out of the CSV's colliding
+> id block). `:8000` is no longer running;
+> `src/api/live.ts`, `src/api/http.ts` and `src/api/liveCatalog.ts` were
+> deleted, along with the Vite dev proxy and the `VITE_API_MODE` switch. Recover
+> them from git history if you need the fetch layer back.
+>
+> Two things to know before treating this document as current:
+>
+> 1. **The catalogue schema below is out of date.** The API stopped reporting
+>    delivered usage — `impressions`, `gross_data_revenue`, `buyers_with_usage`,
+>    `platforms_with_usage`, `popularity_rank` and the usage window are all gone,
+>    replaced by `cookie_reach`, `ios_reach`, `android_reach`, `input_records`,
+>    `reach_by_platform`, `active_platforms` and `reach_rank`. The shape the app
+>    actually reads is `SegmentFeatureRow` in `src/api/backend.ts`.
+> 2. Everything else here — the filter, sort and pagination semantics, the
+>    error contract, the auth notes — still describes what a replacement service
+>    would have to do.
 
-Source of truth in the repo: `src/api/types.ts` (shapes), `src/api/live.ts`
-(routes and query-parameter names), `src/api/mock/index.ts` (filter, sort and
-pagination semantics the backend must reproduce).
+Everything this UI needs from a backend, endpoint by endpoint and field by
+field.
+
+Source of truth in the repo: `src/api/types.ts` (shapes), `src/api/backend.ts`
+(the catalogue row as captured), `src/api/mock/index.ts` (filter, sort and
+pagination semantics a backend would have to reproduce).
 
 ---
 
@@ -15,9 +34,12 @@ pagination semantics the backend must reproduce).
 
 ### Base URL
 
+None of these exist anymore; they are listed as what a restored fetch layer
+would need to reintroduce.
+
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `VITE_API_MODE` | `mock` | `live` switches the app onto the real backend |
+| `VITE_API_MODE` | `mock` | `live` switches the app onto a real backend |
 | `VITE_API_BASE_URL` | `/api` | Prefix prepended to every path below |
 | `VITE_FASTAPI_ORIGIN` | `http://localhost:8000` | Where Vite proxies `/api` in dev |
 
@@ -57,15 +79,29 @@ by default `GET /api/segments`, proxied to `http://localhost:8000/segments`.
 The UI looks these values up in lookup tables (`src/lib/labels.ts`). A value
 outside these sets renders blank rather than erroring, so treat them as closed.
 
-### `PerformanceLabel`
+### `SegmentLabel`
 
-| Value | Displayed as |
-| --- | --- |
-| `top_performer` | Top performer |
-| `frequently_reused` | Frequently reused |
-| `trending_up` | Trending up |
-| `proven_multi_platform` | Proven multi-platform |
-| `new_gaining_traction` | New & gaining traction |
+One flat vocabulary. There is no separate "tag" family — everything a segment
+can earn is a label, listed here strongest-first, which is the order the UI
+draws them in. Each is awarded from one rule, and every award must come with the
+**reason** it was awarded to that segment (`labelReasons`, §3).
+
+| Value | Displayed as | Awarded when |
+| --- | --- | --- |
+| `top_campaign_spend` | Top campaign spend | Top 5% by media spend running against the segment |
+| `best_seller` | Best seller | Top 5% of its category cohort by Marketplace revenue over 90 days, with 5 or more buyers |
+| `most_impressions` | Most impressions | Top 5% by delivered impressions in its cohort |
+| `active_platforms` | Active on 4+ platforms | Distributed to 4 or more ad platforms |
+| `new_addition_trending` | Newly Added & Trending | Added in the last 90 days, with 5 or more buyers already on it |
+| `dormant` | Dormant | Added more than 6 months ago and not running on any platform |
+
+A **cohort** is the segment's two-token taxonomy branch, e.g.
+`Retail > Consumer Electronics`. The 5% cut rounds up, so a small cohort still
+awards one winner.
+
+`active_platforms` is drawn by the UI as **"Activated in N platforms"**, naming
+the segment's own `platformCount` rather than the 4-platform threshold. The
+wording above is what the filter option and the criteria list use.
 
 ### `DestinationId`
 
@@ -108,7 +144,7 @@ Returns one page of segments matching the current filters.
 | Param | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `search` | string | — | Free-text search |
-| `labels` | list of `PerformanceLabel` | — | Repeated key: `?labels=a&labels=b` |
+| `labels` | list of `SegmentLabel` | — | Repeated key: `?labels=a&labels=b` |
 | `destinations` | list of `DestinationId` | — | Repeated key |
 | `sellers` | list of string | — | Repeated key; exact seller names |
 | `statuses` | list of string | — | Repeated key |
@@ -183,13 +219,17 @@ request per keystroke.
 | `seller` | string | yes | Data seller / provider name |
 | `status` | enum | yes | `available` \| `requested` \| `approved` |
 | `marketplaceScore` | int 0–100 | yes | Drives the score bar; ≥80 green, ≥60 amber, else grey |
-| `labels` | `PerformanceLabel[]` | yes | May be empty; rendered as badges |
+| `labels` | `SegmentLabel[]` | yes | May be empty; **ordered strongest-first** — the table caps at three and trusts this order |
+| `labelReasons` | `{ [SegmentLabel]: string }` | yes | Why *this* segment earned each label in `labels`, in its own numbers. Supports `**bold**`; every key in `labels` must have an entry |
 | `platformCount` | int | yes | Number of platforms the segment is proven on |
 | `destinations` | `DestinationDelivery[]` | yes | Ordered by usage, strongest first |
 | `advertiserDirectPctOfMedia` | int | yes | Percent, rendered as `14%` |
 | `cpc` | float | yes | USD, rendered `$0.20` |
 | `cookieReach` | int | yes | Raw count; the UI formats to `11.7M` / `430K` |
-| `dateAdded` | string | yes | `YYYY-MM-DD` |
+| `impressions90d` | int | no | Impressions delivered in the last 90 days. `0` means nothing delivered — which is what earns `dormant` |
+| `impressionsPrior90d` | int | no | The 90 days before that. **Omit** when the segment is newer than the window; do not send `0`, which reads as "nothing delivered" |
+| `impressionsGrowthPct` | int | no | Change against that prior period. Omit when there is no baseline — the UI renders `-`, not `0%` |
+| `dateAdded` | string | yes | `YYYY-MM-DD`. When the segment was added to the marketplace; the 90-day new window is measured from it |
 | `category` | string | yes | Top-level category, e.g. `"Retail"` |
 | `iabCategory` | string | no | e.g. `"IAB Shopping > Consumer Electronics"` |
 
@@ -220,7 +260,7 @@ are in the current result set. The UI caches this response for 5 minutes.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `performanceLabels` | `FacetOption[]` | `value` is a `PerformanceLabel` |
+| `labels` | `FacetOption[]` | `value` is a `SegmentLabel`; `hint` carries the label's criteria, shown on hover in the dropdown |
 | `destinations` | `FacetOption[]` | `value` is a `DestinationId` |
 | `sellers` | `FacetOption[]` | `value` is the exact seller name sent back as a `sellers` filter |
 | `statuses` | `FacetOption[]` | `value` is `available` \| `requested` \| `approved` |
@@ -231,7 +271,8 @@ are in the current result set. The UI caches this response for 5 minutes.
 | --- | --- | --- | --- |
 | `value` | string | yes | Sent back verbatim as the filter value |
 | `label` | string | yes | Display text |
-| `count` | int | yes | Catalogue-wide count, rendered with thousands separators |
+| `count` | int | yes | Catalogue-wide count, rendered with thousands separators. An option with a count of `0` is dropped from the dropdown |
+| `hint` | string | no | Hover text. The label facet uses it for the criteria |
 
 This response drives which filter options exist. Adding a destination here is
 all that is needed to expose it in the UI.
@@ -264,7 +305,7 @@ Every field of `Segment` (§3), plus:
 | `weeksInWindow` | int | yes | Window length, e.g. 13. The UI renders "Continuous use, no gaps" when these are equal, otherwise "N weeks inactive" |
 | `usageIndex` | `UsagePoint[]` | yes | Sparkline; ~6 points |
 | `destinations` | `DestinationDelivery[]` | yes | Per-destination delivery detail |
-| `earnedLabels` | `EarnedLabelExplanation[]` | yes | Send an entry for **all five** labels — earned and not |
+| `earnedLabels` | `EarnedLabelExplanation[]` | yes | Send an entry for **every label in the vocabulary** — earned and not. The not-earned entries render greyed, and their `explanation` should say how far short the segment fell |
 | `evidence` | `EvidenceQuality` | yes | Evidence-quality rows |
 
 ### `UsagePoint`
@@ -278,9 +319,9 @@ Every field of `Segment` (§3), plus:
 
 | Field | Type | Req. | Meaning |
 | --- | --- | --- | --- |
-| `label` | `PerformanceLabel` | yes | |
+| `label` | `SegmentLabel` | yes | |
 | `earned` | bool | yes | `false` entries render as greyed "not earned" rows |
-| `explanation` | string | yes | Why it was or wasn't earned; supports `**bold**` |
+| `explanation` | string | yes | Why it was or wasn't earned, in the segment's own numbers — `"$9,400 of Marketplace revenue over 90 days — the top 5% of its cohort starts at $4,120"`. Supports `**bold**`. For an earned label this should match the segment's `labelReasons` entry |
 
 ### `EvidenceQuality`
 
@@ -325,7 +366,7 @@ Backs the AI Segment Discovery panel.
 | `segmentId` | string | yes | |
 | `fullPath` | string | yes | |
 | `marketplaceScore` | int 0–100 | yes | |
-| `labels` | `PerformanceLabel[]` | yes | |
+| `labels` | `SegmentLabel[]` | yes | |
 | `platformCount` | int | yes | |
 | `extraBadge` | string | no | Free-text badge, e.g. `"Strongest on Snapchat"` |
 | `meta` | string[] | yes | Pre-formatted display chips, e.g. `["Facebook **live**", "14% of media", "11.7M cookie reach"]` |
@@ -448,19 +489,22 @@ class CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
-PerformanceLabel = Literal[
-    "top_performer",
-    "frequently_reused",
-    "trending_up",
-    "proven_multi_platform",
-    "new_gaining_traction",
+SegmentLabel = Literal[
+    "top_campaign_spend",
+    "best_seller",
+    "most_impressions",
+    "active_platforms",
+    "new_addition_trending",
+    "dormant",
 ]
 DestinationId = Literal[
     "facebook", "snapchat", "tiktok", "the_trade_desk", "linkedin", "pinterest", "x"
 ]
 UsageLevel = Literal["very_high", "high", "moderate", "low"]
 SegmentStatus = Literal["available", "requested", "approved"]
-SortKey = Literal["marketplace_score", "cpc", "cookie_reach", "date_added", "name"]
+SortKey = Literal[
+    "marketplace_score", "cpc", "cookie_reach", "impressions", "date_added", "name"
+]
 SortDirection = Literal["asc", "desc"]
 
 
@@ -480,12 +524,16 @@ class Segment(CamelModel):
     seller: str
     status: SegmentStatus
     marketplace_score: int                 # 0-100
-    labels: List[PerformanceLabel]
+    labels: List[SegmentLabel]             # strongest first
+    label_reasons: Dict[SegmentLabel, str] # why each one, in this segment's numbers
     platform_count: int
     destinations: List[DestinationDelivery]  # ordered by usage, strongest first
     advertiser_direct_pct_of_media: int
     cpc: float
     cookie_reach: int
+    impressions_90d: Optional[int] = None
+    impressions_prior_90d: Optional[int] = None   # omit, don't send 0, when new
+    impressions_growth_pct: Optional[int] = None
     date_added: str                        # "YYYY-MM-DD"
     category: str
     iab_category: Optional[str] = None
@@ -497,7 +545,7 @@ class UsagePoint(CamelModel):
 
 
 class EarnedLabelExplanation(CamelModel):
-    label: PerformanceLabel
+    label: SegmentLabel
     earned: bool
     explanation: str                       # supports **bold**
 
@@ -521,7 +569,7 @@ class SegmentPerformance(CamelModel):
     weeks_in_window: int
     usage_index: List[UsagePoint]
     destinations: List[DestinationDelivery]
-    earned_labels: List[EarnedLabelExplanation]   # all five labels, earned or not
+    earned_labels: List[EarnedLabelExplanation]   # every label, earned or not
     evidence: EvidenceQuality
 
 
@@ -536,7 +584,7 @@ class FacetOption(CamelModel):
 
 
 class SegmentFacets(CamelModel):
-    performance_labels: List[FacetOption]
+    labels: List[FacetOption]
     destinations: List[FacetOption]
     sellers: List[FacetOption]
     statuses: List[FacetOption]
@@ -556,7 +604,7 @@ class AiRecommendation(CamelModel):
     segment_id: str
     full_path: str
     marketplace_score: int
-    labels: List[PerformanceLabel]
+    labels: List[SegmentLabel]
     platform_count: int
     extra_badge: Optional[str] = None
     meta: List[str]                        # pre-formatted chips, support **bold**
@@ -587,7 +635,7 @@ router = APIRouter()
 @router.get("/segments", response_model=Paginated[Segment], response_model_by_alias=True)
 def list_segments(
     search: Optional[str] = None,
-    labels: Optional[List[PerformanceLabel]] = Query(None),        # OR-ed
+    labels: Optional[List[SegmentLabel]] = Query(None),            # OR-ed
     destinations: Optional[List[DestinationId]] = Query(None),     # AND-ed, live only
     sellers: Optional[List[str]] = Query(None),
     statuses: Optional[List[SegmentStatus]] = Query(None),
@@ -643,73 +691,47 @@ active — that is the quickest confirmation the switch worked.
 
 ---
 
-## 9. Segment Intelligence API (tags) — a second service
+## 9. Labels: one vocabulary, on the row
 
-Tags are **not** served by the backend documented above. They come from a
-separate service on its own origin, configured with `VITE_TAGS_ORIGIN`
-(default `http://localhost:8001`) and reached through the Vite dev proxy at
-`VITE_TAGS_API_BASE_URL` (default `/tags-api/v1`). Client:
-`src/api/tags.ts` — the only file that talks to it.
+Labels used to come from a second service — a tag API on its own origin, with a
+per-segment chip route and a paged reverse-lookup for filtering. That service is
+gone and so is the split: `SegmentLabel` (§2) is now the whole vocabulary, and a
+segment's labels arrive **on the row**, in `labels`, alongside the reason each
+one was awarded in `labelReasons`.
 
-### Endpoints used
+That has three consequences a backend implementer should know:
 
-| Method | Path | Returns | Used by |
-| --- | --- | --- | --- |
-| `GET` | `/v1/tags` | `SegmentTagRow[]` | The tag vocabulary (11 tags today) |
-| `GET` | `/v1/segments/{id}/tags` | `SegmentTagRow[]` | Chips under a segment name |
-| `GET` | `/v1/tags/{slug}/segments` | `TagSegmentsPage` | The tag filter in **More Filters** |
-| `GET` | `/v1/segments/{id}` | `SegmentIntelRow` | **Not implemented yet** — see below |
+- **No second round trip.** The list route returns everything the chips need, so
+  the table paints its labels with the rows rather than filling them in after.
+- **Filtering is a field match.** `?labels=best_seller` is a predicate on the
+  row, OR-ed with any other selected label — not a reverse lookup, and not
+  intersected. The old tag facet AND-ed; the label facet does not.
+- **Facet counts are honest.** They are counted over the same catalogue the
+  table pages through, so `count` is meaningful and an option with a count of
+  `0` is dropped rather than shown as a dead end.
 
-### `SegmentTagRow`
+### The reason is not optional
 
-Snake_case, unlike the camelCase convention in §1 — this service follows its own.
+A chip that a buyer cannot interrogate is worse than no chip. Every earned label
+must carry a `labelReasons` entry naming the segment's own figure *and* the
+cut-off it beat:
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `tag_key` | `string` | Stable slug, e.g. `top_facebook_activated` |
-| `display_name` | `string` | Chip text, e.g. "Top Facebook Activated" |
-| `description` | `string` | **Why** it was awarded, e.g. "Top 10% distributed on Facebook". Shown on hover. |
-| `category` | `string` | `platform` \| `reach` \| `distribution`. Picks the chip tone; unknown values get the neutral tone. |
-| `priority` | `number` | Lower sorts first. The table shows the two lowest and counts the rest. |
+```json
+"labelReasons": {
+  "best_seller": "**$9,400** of Marketplace revenue over 90 days, across **7** buyers — the **top 5%** of Retail > Consumer Electronics starts at $4,120.",
+  "most_impressions": "**43,007,000** impressions delivered in the last 90 days — the **top 5%** of Retail > Consumer Electronics starts at 37,506,000. It matches well at the destination."
+}
+```
 
-### Filtering by tag
+`GET /segments/{id}` goes further: its `earnedLabels` covers *every* label in the
+vocabulary, including the ones the segment missed, with how far short it fell.
+That breakdown is what the "How it earned its labels" panel renders.
 
-The chips run id → tags; the **More Filters** tag facet runs the other way, on
-`GET /v1/tags/{slug}/segments?page=&size=` (size max 200). It pages bare
-`dms_segment_id` numbers and nothing else, so a whole tag is cheap even at the
-top of the range — "Highly Distributed" is 111,480 ids, 558 requests, ~3s and
-~1.3MB measured against the local service; most tags are a fraction of that.
-Each tag's id set is cached for the tab, and selected tags are AND-ed by
-intersecting their sets (`resolveTagFilter`) before the in-memory query runs.
+### Percentile cut-offs
 
-The route's `total_items` counts against this service's ~198k rows, not the
-~14.6k the app renders, so the facet deliberately shows **no count** next to a
-tag rather than a number the result list would contradict.
-
-### Why it is not the catalog source
-
-Its `GET /v1/segments` carries **198,432** rows against the catalog API's
-14,633, and takes only `page` and `size` (max 200) — no search, filter, sort or
-field projection. The whole-catalog load in `src/api/liveCatalog.ts` would
-become ~992 requests and ~830MB. It also drops `impressions`,
-`gross_data_revenue`, `usage_platform_names`, `buyers_with_usage`,
-`popularity_rank` and the usage window, which the metric columns, facets,
-earned labels and the Performance tab are all built on, and has no counterpart
-to `?query=` for AI Discovery.
-
-So the catalog API stays the source of truth and this service enriches it, one
-visible row at a time. `GET /v1/segments/{id}/tags` is 774 bytes and a few
-milliseconds, so a 50-row page costs ~40KB and every id is cached for the tab.
-
-### Wanted: `GET /v1/segments/{id}`
-
-The service reports measured `cookie_reach`, `ios_reach`, `android_reach` and
-`input_records` — figures `src/api/adapters/catalog.ts` currently *derives* from
-delivered usage and flags as estimates. Adopting them needs a row-level fetch,
-and there is none: `/v1/segments/1189` 404s, and the list route ignores `?ids=`
-and `?fields=`.
-
-The client is already written against that route and returns the tags *and* the
-reach in a single response when it answers. Add it and set `VITE_TAGS_REACH=true`;
-until then the flag is off, and turning it on early falls back to the tags route
-on the 404 rather than breaking.
+`top_campaign_spend` is a top-5% cut over the **whole catalogue**; `best_seller`
+and `most_impressions` are top-5% cuts **within the segment's cohort**, with the
+cut rounded up so a small cohort still awards a winner. Compute them over the
+whole catalogue, not over the page being served, and hold them steady
+for the request — a cut-off that moves between the list route and the detail
+route lets a chip and its own explanation disagree.

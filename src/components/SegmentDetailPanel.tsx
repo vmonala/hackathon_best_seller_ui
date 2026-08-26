@@ -1,13 +1,19 @@
 import { useState, type ReactNode } from 'react'
 import * as Tabs from '@radix-ui/react-tabs'
 import { Link } from 'react-router-dom'
-import { useSegment, useSegmentIntel } from '@/api/queries'
+import { useSegment } from '@/api/queries'
 import type { SegmentDetail } from '@/api/types'
-import { LabelBadge } from './Badge'
-import { TagChips, TagExplanations } from './TagChip'
+import { LabelChips, LabelExplanations } from './LabelChip'
 import { DestinationChip } from './DestinationDots'
 import { UsageSparkline } from './UsageSparkline'
-import { destinationMeta, formatDate, formatNumber, USAGE_TEXT } from '@/lib/labels'
+import {
+  destinationMeta,
+  formatDate,
+  formatNumber,
+  formatReach,
+  USAGE_TEXT,
+} from '@/lib/labels'
+import { windowLabel, windowValue } from './PerformanceTab'
 import { ESTIMATED_CATALOG_METRICS, METRIC_LABELS } from '@/lib/metricLabels'
 import { cn } from '@/lib/cn'
 
@@ -24,14 +30,7 @@ interface Props {
  * straight through to the next segment.
  */
 export function SegmentDetailPanel({ segmentId, onClose }: Props) {
-  const { data: raw, isLoading, isError, error } = useSegment(segmentId)
-  const { data: intel } = useSegmentIntel([segmentId])
-  // Uncapped here — the sheet has the room the pinned table column does not.
-  const tags = intel?.get(segmentId)?.tags
-
-  // Measured reach, when the tags API supplies it, replaces the derived figures.
-  const reach = intel?.get(segmentId)?.reach
-  const segment = raw && { ...raw, tags, ...(reach && { ...reach, reachMeasured: true }) }
+  const { data: segment, isLoading, isError, error } = useSegment(segmentId)
 
   return (
     <aside className="flex w-[580px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white">
@@ -48,16 +47,11 @@ export function SegmentDetailPanel({ segmentId, onClose }: Props) {
             ✕
           </button>
         </div>
-        {tags?.length ? (
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-            <TagChips tags={tags} />
-          </div>
-        ) : null}
+        {/* Every label, uncapped and with its reason on hover — the sheet has
+            the room the pinned table column does not. */}
         {segment && segment.labels.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pb-1">
-            {segment.labels.map((l) => (
-              <LabelBadge key={l} label={l} short />
-            ))}
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pb-1">
+            <LabelChips segment={segment} />
           </div>
         )}
       </div>
@@ -103,14 +97,19 @@ function PanelBody({ segment: s }: { segment: SegmentDetail }) {
         <SellerWordmark seller={s.seller} />
 
         <div className="mt-5 space-y-2.5">
-          <Section title="Configuration">
+          <Section title="Configuration" defaultOpen={false}>
             <Stacked label="Segment Name" value={s.fullPath} />
             <Stacked label="Description" value={s.description ?? '-'} />
           </Section>
 
-          <Section title="Asset Overview">
+          <Section title="Asset Overview" defaultOpen={false}>
             <Row label="Segment Type" value={s.segmentType ?? '-'} />
             <Row label="Segment ID" value={s.id} />
+            <Row label="Date Added" value={formatDate(s.dateAdded)} />
+            <Row
+              label={METRIC_LABELS.impressions}
+              value={count(s.impressions90d)}
+            />
             <Row
               label="Data Seller"
               value={
@@ -152,9 +151,10 @@ function PanelBody({ segment: s }: { segment: SegmentDetail }) {
             />
             {ESTIMATED_CATALOG_METRICS && (
               <p className="mt-2.5 text-[11.5px] leading-[1.5] text-muted2">
-                Device reach, input records, provenance and the refresh dates above
-                are estimates derived from delivered usage. The catalog API reports
-                the segment type, ID, seller and impressions only.
+                The rate card, the media-share percentages and provenance are
+                estimates derived from reach and distribution — the catalogue does
+                not report them. Cookie, iOS and Android reach, the input record
+                count, delivered impressions and the date added are reported.
               </p>
             )}
           </Section>
@@ -216,11 +216,23 @@ function MarketplacePerformance({ segment: s }: { segment: SegmentDetail }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-2.5">
-        <Kpi label="Advertisers (90d)" value={p.advertisersUsing90d} />
+        <Kpi label="Buyers distributing" value={p.advertisersUsing90d} />
         <Kpi
-          label="Weeks active"
-          value={`${p.weeksActive}/${p.weeksInWindow}`}
+          label={METRIC_LABELS.impressions}
+          value={
+            s.impressions90d == null ? '-' : formatReach(s.impressions90d)
+          }
         />
+        {/* Continuity needs a week-by-week series the catalogue snapshot has
+            no equivalent of; measured reach stands in when it is absent. */}
+        {p.weeksActive == null || p.weeksInWindow == null ? (
+          <Kpi label="Cookie reach" value={formatReach(s.cookieReach)} />
+        ) : (
+          <Kpi
+            label="Weeks active"
+            value={`${p.weeksActive}/${p.weeksInWindow}`}
+          />
+        )}
       </div>
 
       {p.usageIndex.length > 0 && (
@@ -230,7 +242,7 @@ function MarketplacePerformance({ segment: s }: { segment: SegmentDetail }) {
         </>
       )}
 
-      <h6 className="sec-label mt-4">Where it delivers</h6>
+      <h6 className="sec-label mt-4">Where it&apos;s distributed</h6>
       {p.destinations.map((d) => (
         <div
           key={d.destination}
@@ -242,13 +254,13 @@ function MarketplacePerformance({ segment: s }: { segment: SegmentDetail }) {
           </span>
           <span className="text-muted2">
             {USAGE_TEXT[d.usage]}
-            {d.live ? '' : ' · not delivering'}
+            {d.live ? '' : ' · not distributed'}
           </span>
         </div>
       ))}
 
-      <h6 className="sec-label mt-4">How it earned its tags</h6>
-      <TagExplanations tags={s.tags} />
+      <h6 className="sec-label mt-4">How it earned its labels</h6>
+      <LabelExplanations earned={p.earnedLabels} platformCount={s.platformCount} />
 
       <h6 className="sec-label mt-4">Evidence quality</h6>
       <Row
@@ -256,23 +268,22 @@ function MarketplacePerformance({ segment: s }: { segment: SegmentDetail }) {
         value={p.evidence.attributionConfidence}
       />
       <Row
-        label="Usage directly attributed"
-        value={`${p.evidence.usageDirectlyAttributedPct}% of impressions`}
+        label="Advertiser direct share"
+        value={`${p.evidence.usageDirectlyAttributedPct}% of media`}
       />
       <Row
         label="Labels last recomputed"
         value={formatDate(p.evidence.labelsLastRecomputed)}
       />
       <Row
-        label="Reporting window"
-        value={`${formatDate(p.evidence.reportingWindowStart)} – ${formatDate(
-          p.evidence.reportingWindowEnd,
-        )}`}
+        label={windowLabel(p.evidence)}
+        value={windowValue(p.evidence)}
         last
       />
       <p className="mt-2.5 text-[11.5px] leading-[1.55] text-muted2">
-        Labels are computed from aggregated, delivered marketplace usage, pooled across
-        at least five buyers. They describe marketplace demand, not campaign outcomes.
+        Labels are computed from the segment&apos;s marketplace footprint — buyers,
+        platforms and measured Connect reach — pooled across at least five buyers. They
+        describe distribution and reach, not campaign outcomes.
       </p>
     </>
   )
@@ -293,8 +304,17 @@ function SellerWordmark({ seller }: { seller: string }) {
   )
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  const [open, setOpen] = useState(true)
+function Section({
+  title,
+  children,
+  defaultOpen = true,
+}: {
+  title: string
+  children: ReactNode
+  /** Collapsed on open when false — for the long declared-metadata blocks. */
+  defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
   return (
     <section className="rounded-md border border-line">
       <button

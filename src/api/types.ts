@@ -8,12 +8,28 @@
  *   npx openapi-typescript http://localhost:8000/openapi.json -o src/api/schema.d.ts
  */
 
-export type PerformanceLabel =
-  | 'top_performer'
-  | 'frequently_reused'
-  | 'trending_up'
-  | 'proven_multi_platform'
-  | 'new_gaining_traction'
+/**
+ * Everything a marketplace segment can earn.
+ *
+ * One flat vocabulary — there is no longer a split between "performance
+ * labels" and "intelligence tags". Each key is awarded from one rule, stated
+ * in `LABEL_VOCABULARY` in `mock/catalogRows.ts`, and every award carries a
+ * per-segment reason with that segment's own numbers in it (see
+ * `Segment.labelReasons`).
+ */
+export type SegmentLabel =
+  /** Top 5% of the catalogue by media spend running against the segment. */
+  | 'top_campaign_spend'
+  /** Top 5% of its category cohort by 90-day Marketplace revenue, 5+ buyers. */
+  | 'best_seller'
+  /** Top 5% of its category cohort by impressions delivered in the last 90 days. */
+  | 'most_impressions'
+  /** Distributed to four or more ad platforms. */
+  | 'active_platforms'
+  /** Added in the last 90 days, with 5 or more buyers already on it. */
+  | 'new_addition_trending'
+  /** Added more than 6 months ago and not running on any platform. */
+  | 'dormant'
 
 /** Destinations the UI ships hand-drawn styling for. */
 export type KnownDestinationId =
@@ -46,19 +62,23 @@ export interface DestinationDelivery {
 }
 
 /**
- * A tag the Segment Intelligence API awarded to a segment. The description is
- * the *reason* it was awarded, and is what the chip's tooltip shows.
+ * One entry in the label vocabulary: what a label is called and what has to be
+ * true to earn it. This is the option list for the label filter.
+ *
+ * `description` is the criteria, phrased catalogue-wide. What the chip's
+ * tooltip shows is the *segment's* reason from `Segment.labelReasons`, which
+ * quotes that segment's own numbers; the criteria is the fallback when no
+ * per-segment reason is available.
  */
-export interface SegmentTag {
-  /** Stable slug, e.g. "top_facebook_activated". */
-  key: string
-  /** e.g. "Top Facebook Activated" */
+export interface LabelDefinition {
+  key: SegmentLabel
+  /** e.g. "Best seller" */
   name: string
-  /** e.g. "Top 10% distributed on Facebook" */
+  /** e.g. "Top 5% of its category cohort by Marketplace revenue over 90 days" */
   description: string
-  /** "platform" | "reach" | "distribution" — picks the chip tone. */
+  /** Picks the chip tone. See `SegmentLabelRow.category`. */
   category: string
-  /** Lower sorts first; the table shows the two lowest. */
+  /** Lower sorts first; the table shows the strongest few. */
   priority: number
 }
 
@@ -73,7 +93,15 @@ export interface Segment {
   seller: string
   status: 'available' | 'requested' | 'approved'
   marketplaceScore: number
-  labels: PerformanceLabel[]
+  /** Earned labels, strongest first. */
+  labels: SegmentLabel[]
+  /**
+   * Why *this* segment earned each of the labels above, with its own numbers in
+   * it — "$9,400 of revenue; its cohort's top 5% starts at $4,120". Shown on the
+   * chip tooltip and in the "How it earned its labels" breakdown. Keyed by
+   * label; a label present in `labels` always has an entry.
+   */
+  labelReasons: Partial<Record<SegmentLabel, string>>
   platformCount: number
   /** Ordered by usage, strongest first */
   destinations: DestinationDelivery[]
@@ -115,12 +143,18 @@ export interface Segment {
   reachAsOf?: string
   /** ISO date the input record count was measured. */
   inputRecordsAsOf?: string
+  /** Impressions delivered in the last 90 days. `0` means nothing delivered. */
+  impressions90d?: number
   /**
-   * From the tags API, which is a separate service — `undefined` means "not
-   * loaded yet", not "no tags". Rows on the list page get theirs from
-   * `useSegmentTags` rather than through the catalog adapter.
+   * Impressions in the 90 days before that. `undefined` when the segment is
+   * newer than the window and there is no comparable prior period.
    */
-  tags?: SegmentTag[]
+  impressionsPrior90d?: number
+  /**
+   * Change in impressions against that prior period, as a percentage.
+   * `undefined` when there is no baseline to compare with.
+   */
+  impressionsGrowthPct?: number
   /**
    * True when the reach figures above are measured values from the Segment
    * Intelligence API rather than derived from delivered usage. Drives the
@@ -129,9 +163,14 @@ export interface Segment {
   reachMeasured?: boolean
 }
 
+/**
+ * One row of the "How it earned its labels" breakdown: every label in the
+ * vocabulary, whether this segment earned it, and why — or why not.
+ */
 export interface EarnedLabelExplanation {
-  label: PerformanceLabel
+  label: SegmentLabel
   earned: boolean
+  /** The segment's own numbers against the label's cut-off, either way. */
   explanation: string
 }
 
@@ -147,6 +186,11 @@ export interface EvidenceQuality {
   usageDirectlyAttributedPct: number
   sharedAdGroupAllocationPct: number
   labelsLastRecomputed: string
+  /**
+   * The period the evidence covers. The catalogue is a point-in-time snapshot
+   * rather than a window, so these are equal on marketplace segments and the UI
+   * renders a single measurement date; the seller feed reports a real range.
+   */
   reportingWindowStart: string
   reportingWindowEnd: string
 }
@@ -155,10 +199,17 @@ export interface SegmentPerformance {
   segmentId: string
   marketplaceScore: number
   scorePercentileNote: string
+  /** Distinct buyers with the segment enabled. */
   advertisersUsing90d: string
   destinationCount: number
-  weeksActive: number
-  weeksInWindow: number
+  /**
+   * Continuity of use. Both are absent for marketplace segments: the catalogue
+   * reports a current distribution snapshot, with no week-by-week series to
+   * count active weeks in. The KPI falls back to measured reach when they are.
+   */
+  weeksActive?: number
+  weeksInWindow?: number
+  /** Empty when no time series is reported; the sparkline is hidden. */
   usageIndex: UsagePoint[]
   destinations: DestinationDelivery[]
   earnedLabels: EarnedLabelExplanation[]
@@ -184,28 +235,29 @@ export interface FacetOption<T extends string = string> {
 }
 
 export interface SegmentFacets {
-  performanceLabels: FacetOption<PerformanceLabel>[]
+  labels: FacetOption<SegmentLabel>[]
   destinations: FacetOption<DestinationId>[]
   sellers: FacetOption[]
   statuses: FacetOption[]
 }
 
 export type SortKey =
+  /** Groups segments carrying the same labels together, strongest set first. */
+  | 'labels'
   | 'marketplace_score'
   | 'cpc'
   | 'cookie_reach'
+  | 'impressions'
   | 'date_added'
   | 'name'
 
 export interface SegmentQuery {
   search?: string
-  labels?: PerformanceLabel[]
   /**
-   * Tag slugs from the Segment Intelligence API, e.g. "buyer_magnet". AND-ed:
-   * a segment must carry every selected tag. Resolved to segment ids by
-   * `resolveTagFilter` before the query runs — see `src/api/tags.ts`.
+   * Label keys, e.g. "best_seller". OR-ed: picking a second label widens the
+   * results, which is what the independent per-label facet counts imply.
    */
-  tags?: string[]
+  labels?: SegmentLabel[]
   destinations?: DestinationId[]
   sellers?: string[]
   statuses?: string[]
@@ -233,7 +285,9 @@ export interface AiRecommendation {
   segmentId: string
   fullPath: string
   marketplaceScore: number
-  labels: PerformanceLabel[]
+  labels: SegmentLabel[]
+  /** Why each of those labels was awarded. Empty when the answer omits them. */
+  labelReasons?: Partial<Record<SegmentLabel, string>>
   platformCount: number
   extraBadge?: string
   meta: string[]

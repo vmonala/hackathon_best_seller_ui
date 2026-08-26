@@ -1,43 +1,31 @@
-import type { SegmentFacets, SegmentQuery, SortKey } from '@/api/types'
-import { useTagVocabulary } from '@/api/queries'
+import type { SegmentFacets, SegmentQuery } from '@/api/types'
 import type { FilterKey } from '@/lib/useSegmentQueryParams'
-import { LABEL_META, destinationName, tagIcon } from '@/lib/labels'
-import { SORT_OPTIONS } from '@/lib/metricLabels'
-import type { DestinationId, PerformanceLabel } from '@/api/types'
+import { LABEL_META, destinationName } from '@/lib/labels'
+import type { DestinationId, SegmentLabel } from '@/api/types'
 
 interface FilterChipsProps {
   query: SegmentQuery
   facets?: SegmentFacets
   onToggle: (key: FilterKey, value: string) => void
-  onUpdate: (patch: Partial<SegmentQuery>) => void
   onClearAll: () => void
 }
 
+/**
+ * The active filters, each removable. Sorting is not offered here — it is done
+ * by clicking a column header in `SegmentsTable`.
+ */
 export function FilterChips({
   query,
   facets,
   onToggle,
-  onUpdate,
   onClearAll,
 }: FilterChipsProps) {
-  // Named so a tag chip reads as its badge rather than its slug; until the
-  // vocabulary lands the slug is still removable, which is what the chip is for.
-  const { data: tags } = useTagVocabulary()
-
   const chips: { key: FilterKey; value: string; text: string }[] = [
-    ...(query.labels ?? []).map((l: PerformanceLabel) => ({
+    ...(query.labels ?? []).map((l: SegmentLabel) => ({
       key: 'labels' as const,
       value: l,
-      text: LABEL_META[l].text,
+      text: `${LABEL_META[l].icon} ${LABEL_META[l].text}`,
     })),
-    ...(query.tags ?? []).map((slug) => {
-      const tag = tags?.find((t) => t.key === slug)
-      return {
-        key: 'tags' as const,
-        value: slug,
-        text: tag ? `${tagIcon(tag)} ${tag.name}` : slug,
-      }
-    }),
     ...(query.destinations ?? []).map((d: DestinationId) => ({
       key: 'destinations' as const,
       value: d,
@@ -56,6 +44,9 @@ export function FilterChips({
     })),
   ]
 
+  // Nothing to show, and no sort control to hold the row open anymore.
+  if (chips.length === 0) return null
+
   return (
     <div className="my-[18px] mb-1 flex flex-wrap items-center gap-2.5 text-[13.5px] text-muted">
       {chips.map((chip) => (
@@ -69,41 +60,12 @@ export function FilterChips({
         </button>
       ))}
 
-      {chips.length > 0 && (
-        <button
-          onClick={onClearAll}
-          className="text-[12.5px] text-indigo-ink underline hover:no-underline"
-        >
-          Clear all filters
-        </button>
-      )}
-
-      <div className="ml-auto flex items-center gap-[7px] rounded-md border border-[#C9CDD3] bg-white px-3 py-[7px] text-[13px]">
-        <label htmlFor="sort" className="text-muted">
-          Sort:
-        </label>
-        <select
-          id="sort"
-          value={query.sort}
-          onChange={(e) => onUpdate({ sort: e.target.value as SortKey })}
-          className="cursor-pointer bg-transparent font-bold text-ink outline-none"
-        >
-          {SORT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={() =>
-            onUpdate({ direction: query.direction === 'asc' ? 'desc' : 'asc' })
-          }
-          aria-label="Toggle sort direction"
-          className="text-[11px] text-muted hover:text-ink"
-        >
-          {query.direction === 'asc' ? '▲' : '▼'}
-        </button>
-      </div>
+      <button
+        onClick={onClearAll}
+        className="text-[12.5px] text-indigo-ink underline hover:no-underline"
+      >
+        Clear all filters
+      </button>
     </div>
   )
 }

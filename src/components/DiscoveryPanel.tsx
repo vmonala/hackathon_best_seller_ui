@@ -7,20 +7,49 @@ import { renderBold } from '@/lib/markdown'
 interface DiscoveryPanelProps {
   onClose: () => void
   onAsk: (question: string) => void
+  /**
+   * Clears the answer. The result lives in the caller's mutation state, not
+   * here, so starting over has to go back through it — and because the caller
+   * also narrows the table to the answer's candidates, that narrowing lifts
+   * with it.
+   */
+  onReset: () => void
   isPending: boolean
   result?: AiDiscoveryResponse
   error?: Error | null
 }
 
+/**
+ * The chip is a starting point, not the question — the label reads as a
+ * category so the panel stays scannable, and the prompt behind it is the
+ * fully-formed brief the agent actually receives.
+ */
 const SUGGESTIONS = [
-  'I need the segments in the retail category for smart watches to activate to facebook and snapchat destination. Give me the most popular segments',
-  'Show me the trending smartwatch segments only',
-  'Compare cost per 1,000 impressions across wearables segments',
+  {
+    label: 'Demographic: Household Reach',
+    prompt:
+      'Show me the household-level segments with the strongest cross-device reach',
+  },
+  {
+    label: 'Interest: Category Affinity',
+    prompt:
+      'Find interest and affinity segments I can activate on the most destinations',
+  },
+  {
+    label: 'Purchase: Consumer Tech',
+    prompt:
+      'I need purchase-data segments for a consumer tech campaign. Give me the strongest ones',
+  },
+  {
+    label: 'Lifestyle: Fitness & Wellness',
+    prompt: 'Show me the widest-reaching lifestyle and fitness segments',
+  },
 ]
 
 export function DiscoveryPanel({
   onClose,
   onAsk,
+  onReset,
   isPending,
   result,
   error,
@@ -34,9 +63,19 @@ export function DiscoveryPanel({
     setInput('')
   }
 
+  /** Back to the empty panel: no answer, no error, no half-typed follow-up. */
+  const startOver = () => {
+    setInput('')
+    onReset()
+  }
+
+  // Nothing to clear on a panel that was just opened, and clearing mid-flight
+  // would only be undone when the answer in flight lands.
+  const canReset = !isPending && Boolean(result || error || input)
+
   return (
-    <div className="flex w-[620px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white px-[26px] py-[22px]">
-      <div className="flex items-center gap-2.5 text-[22px] font-bold">
+    <div className="flex h-[939px] w-[499px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white px-[26px] py-[22px]">
+      <div className="flex items-center gap-2.5 text-[22px] text-ink">
         <span className="text-[19px] text-indigo">✦</span>
         AI Segment Discovery
         <button
@@ -49,19 +88,24 @@ export function DiscoveryPanel({
       </div>
 
       {!result && !isPending && (
-        <div className="mt-6">
-          <p className="text-[14.5px] leading-[1.6] text-ink2">
-            Describe the audience you want to reach and the destinations you plan to
-            activate on. Results are ranked by delivered marketplace usage.
+        <div className="mt-auto pt-8">
+          <h2 className="text-[28px] font-semibold leading-[1.22] tracking-[-0.4px] text-ink">
+            I can help you discover segments in the Data Marketplace
+          </h2>
+          <p className="mt-3.5 text-[14.5px] leading-[1.6] text-ink2">
+            Start with a campaign brief or description of the segments you are looking
+            for. This can include demographics, data sources, and other requirements.
+            Or start with a suggested prompt.
           </p>
-          <div className="mt-4 space-y-2">
+          <div className="mt-5 flex flex-col items-start gap-2.5">
             {SUGGESTIONS.map((s) => (
               <button
-                key={s}
-                onClick={() => submit(s)}
-                className="w-full rounded-lg border border-line px-4 py-3 text-left text-[13px] leading-[1.5] text-ink2 transition-colors hover:border-indigo hover:bg-indigo-soft"
+                key={s.label}
+                onClick={() => submit(s.prompt)}
+                className="flex items-center gap-2.5 rounded-lg bg-indigo-soft px-3.5 py-2.5 text-left text-[14px] font-semibold text-ink transition-colors hover:bg-[#E4E0FF]"
               >
-                {s}
+                <span className="text-[13px] text-indigo">✦</span>
+                {s.label}
               </button>
             ))}
           </div>
@@ -106,12 +150,15 @@ export function DiscoveryPanel({
               </Link>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {rec.labels
-                  .filter((l) => l !== 'proven_multi_platform')
+                  .filter((l) => l !== 'active_platforms')
                   .map((l) => (
-                    <LabelBadge key={l} label={l} />
+                    <LabelBadge key={l} label={l} reason={rec.labelReasons?.[l]} />
                   ))}
-                {rec.labels.includes('proven_multi_platform') && (
-                  <PlatformBadge count={rec.platformCount} />
+                {rec.labels.includes('active_platforms') && (
+                  <PlatformBadge
+                    count={rec.platformCount}
+                    reason={rec.labelReasons?.active_platforms}
+                  />
                 )}
                 {rec.extraBadge && <TextBadge>{rec.extraBadge}</TextBadge>}
               </div>
@@ -135,7 +182,7 @@ export function DiscoveryPanel({
         </div>
       )}
 
-      <div className="mt-auto pt-3">
+      <div className={`pt-4 ${result || isPending || error ? 'mt-auto' : 'mb-auto'}`}>
         <div className="rounded-xl border border-[#D5D9DE] px-[15px] py-3.5 focus-within:border-indigo">
           <textarea
             value={input}
@@ -146,17 +193,25 @@ export function DiscoveryPanel({
                 submit(input)
               }
             }}
-            rows={2}
-            placeholder='Ask a follow-up — e.g. "show the trending ones only" or "compare cost per 1,000 impressions"'
-            className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted2"
+            rows={3}
+            placeholder={
+              result ? 'Ask a follow-up' : 'Describe what you are looking for'
+            }
+            className="w-full resize-none bg-transparent text-[14.5px] outline-none placeholder:text-muted2"
           />
           <div className="mt-3 flex items-center text-[13px] text-muted2">
-            <button className="hover:text-ink">＋ New Exploration</button>
+            <button
+              onClick={startOver}
+              disabled={!canReset}
+              className="hover:text-ink disabled:cursor-default disabled:opacity-40 disabled:hover:text-muted2"
+            >
+              ＋ New Exploration
+            </button>
             <button
               onClick={() => submit(input)}
               disabled={!input.trim() || isPending}
               aria-label="Send"
-              className="ml-auto flex h-[29px] w-[29px] items-center justify-center rounded-full bg-indigo text-[13px] text-white disabled:opacity-40"
+              className="ml-auto flex h-[29px] w-[29px] items-center justify-center rounded-full text-[17px] text-muted transition-colors hover:bg-indigo-soft hover:text-indigo disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted"
             >
               ↑
             </button>
@@ -221,7 +276,7 @@ function ThinkingState() {
     <div className="mt-5 space-y-3">
       <div className="flex items-center gap-2 text-[13px] text-muted">
         <span className="h-2 w-2 animate-pulse rounded-full bg-indigo" />
-        Ranking segments by delivered marketplace usage…
+        Ranking segments by measured reach and distribution…
       </div>
       {[0, 1, 2].map((i) => (
         <div key={i} className="rounded-[10px] border border-line px-[15px] py-3.5">

@@ -2,13 +2,13 @@ import { useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type {
   DestinationId,
-  PerformanceLabel,
+  SegmentLabel,
   SegmentQuery,
   SortKey,
 } from '@/api/types'
 
 /** The multi-select filters, keyed as they are on `SegmentQuery`. */
-export type FilterKey = 'labels' | 'tags' | 'destinations' | 'sellers' | 'statuses'
+export type FilterKey = 'labels' | 'destinations' | 'sellers' | 'statuses'
 
 export const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const
 
@@ -29,14 +29,15 @@ export function useSegmentQueryParams() {
   const query = useMemo<SegmentQuery>(
     () => ({
       search: params.get('q') ?? '',
-      labels: params.getAll('label') as PerformanceLabel[],
-      tags: params.getAll('tag'),
+      labels: params.getAll('label') as SegmentLabel[],
       destinations: params.getAll('dest') as DestinationId[],
       sellers: params.getAll('seller'),
       statuses: params.getAll('status'),
-      // Delivered reach, not the internal marketplace score: the score earns
-      // the performance labels but is not shown on the list page.
-      sort: (params.get('sort') as SortKey | null) ?? 'cookie_reach',
+      // Grouped by label set by default: the labels are the reason a buyer is
+      // on this page, and stacking the segments that earned the same ones puts
+      // "what works" next to the segments it applies to. Every other sort is
+      // one header click away.
+      sort: (params.get('sort') as SortKey | null) ?? 'labels',
       direction: (params.get('dir') as 'asc' | 'desc' | null) ?? 'desc',
       page: Math.max(1, Number(params.get('page')) || 1),
       pageSize: parsePageSize(params.get('size')),
@@ -59,7 +60,6 @@ export function useSegmentQueryParams() {
             patch.search ? next.set('q', patch.search) : next.delete('q')
           }
           setMulti('label', patch.labels)
-          setMulti('tag', patch.tags)
           setMulti('dest', patch.destinations)
           setMulti('seller', patch.sellers)
           setMulti('status', patch.statuses)
@@ -93,10 +93,7 @@ export function useSegmentQueryParams() {
 
       switch (key) {
         case 'labels':
-          update({ labels: next as PerformanceLabel[] })
-          break
-        case 'tags':
-          update({ tags: next })
+          update({ labels: next as SegmentLabel[] })
           break
         case 'destinations':
           update({ destinations: next as DestinationId[] })
@@ -116,11 +113,9 @@ export function useSegmentQueryParams() {
     setParams(new URLSearchParams(), { replace: true })
   }, [setParams])
 
-  // What "More Filters" counts: the three facets that live behind it.
+  // What "More Filters" counts: the two facets that live behind it.
   const activeFilterCount =
-    (query.labels?.length ?? 0) +
-    (query.tags?.length ?? 0) +
-    (query.destinations?.length ?? 0)
+    (query.labels?.length ?? 0) + (query.destinations?.length ?? 0)
 
   return { query, update, toggleIn, clearAll, activeFilterCount }
 }

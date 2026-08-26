@@ -1,8 +1,8 @@
 import * as Tabs from '@radix-ui/react-tabs'
 import { Link, useParams } from 'react-router-dom'
-import { useSegment, useSegmentIntel } from '@/api/queries'
-import { LabelBadge, TextBadge } from '@/components/Badge'
-import { TagChips } from '@/components/TagChip'
+import { useSegment } from '@/api/queries'
+import { TextBadge } from '@/components/Badge'
+import { LabelChips } from '@/components/LabelChip'
 import { PerformanceTab } from '@/components/PerformanceTab'
 import { DestinationChip, DestinationDots } from '@/components/DestinationDots'
 import {
@@ -23,17 +23,7 @@ const TABS = [
 
 export function SegmentDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const { data: raw, isLoading, isError, error } = useSegment(id)
-  const { data: intel } = useSegmentIntel(id ? [id] : [])
-  const entry = id ? intel?.get(id) : undefined
-  // Measured reach, when the tags API supplies it, replaces the derived figures.
-  // Tags ride along on the segment so the Performance tab can explain them.
-  const segment =
-    raw && {
-      ...raw,
-      tags: entry?.tags,
-      ...(entry?.reach && { ...entry.reach, reachMeasured: true }),
-    }
+  const { data: segment, isLoading, isError, error } = useSegment(id)
 
   if (isLoading) {
     return (
@@ -75,24 +65,10 @@ export function SegmentDetailPage() {
           <h2 className="my-[7px] mb-2.5 text-[23px] font-bold tracking-[-0.3px]">
             {segment.fullPath}
           </h2>
-          {/* Every tag, uncapped — the table shows only the strongest two. */}
-          {entry?.tags?.length ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <TagChips tags={entry.tags} />
-            </div>
-          ) : null}
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {segment.labels
-              .filter((l) => l !== 'proven_multi_platform')
-              .map((l) => (
-                <LabelBadge key={l} label={l} />
-              ))}
-            {segment.labels.includes('proven_multi_platform') && (
-              <span className="bdg bdg-multi">
-                <span className="text-[10.5px]">◈</span>
-                Proven on {segment.platformCount} platforms
-              </span>
-            )}
+          {/* Every label, uncapped and with the reason it was awarded on
+              hover — the table shows only the strongest few. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <LabelChips segment={segment} />
             <TextBadge>
               {segment.category}
               {segment.iabCategory ? ` · ${segment.iabCategory}` : ''}
@@ -171,7 +147,7 @@ export function SegmentDetailPage() {
                 </span>
                 <span className="text-muted2">
                   {USAGE_TEXT[d.usage]}
-                  {d.live ? ' · live' : ' · not delivering'}
+                  {d.live ? ' · live' : ' · not distributed'}
                 </span>
               </div>
             ))}

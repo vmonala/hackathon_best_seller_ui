@@ -1,17 +1,33 @@
 /**
  * Wire types for the LiveRamp Bestsellers Segment Intelligence API.
  *
- * Transcribed from http://localhost:8000/openapi.json — keep in sync with the
- * Pydantic models there. These are the *raw* shapes; everything the UI renders
- * goes through `adapters/catalog.ts` first.
+ * The app no longer calls that API. The catalogue it served was captured into
+ * `src/api/mock/catalogRows.ts` and is read from there — see `src/api/client.ts`.
+ * These types stay because they describe the shape of that capture, so the
+ * fixture and the adapter that reads it cannot drift apart, and so re-pointing
+ * the app at a live backend later is a matter of restoring a fetch layer rather
+ * than re-deriving the contract.
  *
- * The API has exactly one route with two behaviours, discriminated by `mode`:
+ * Transcribed from the `/openapi.json` of both services as of 2026-08-26:
  *
- *   GET /v1/segments?page=&page_size=  -> CatalogPage   (mode: "catalog")
- *   GET /v1/segments?query=<question>  -> AgentAnswer   (mode: "agent")
+ *   GET :8000/v1/segments   -> CatalogPage        (the catalogue rows)
+ *   GET :8001/v1/labels     -> SegmentLabelRow[]  (the label vocabulary)
+ *   GET :8001/v1/segments   -> the same rows, each with its labels inlined
  */
 
-/** One row of the offline BigQuery dump of segment recommendation features. */
+/**
+ * One catalogue row: a segment's distribution footprint and its measured
+ * device reach.
+ *
+ * Note what is *not* here. An earlier revision of this API reported gross data
+ * revenue and per-buyer spend. That feed is gone, and with it every
+ * revenue-derived figure. `adapters/catalog.ts` documents what the UI does
+ * about the columns that used to read from it.
+ *
+ * The delivered-usage, commercial and lifecycle fields below *are* on the row,
+ * but they are generated for the fixture rather than captured — see the module
+ * docblock in `mock/catalogRows.ts`.
+ */
 export interface SegmentFeatureRow {
   dms_segment_id: number
   /** Full taxonomy path, e.g. "Acxiom US Demographic > Age > 35-44" */
@@ -19,137 +35,84 @@ export interface SegmentFeatureRow {
   segment_description: string | null
   segment_type: string
   seller_customer_id: number
-  /** Platforms the segment is currently distributed to. */
-  active_platform_names: string[]
-  /** Platforms that delivered impressions in the usage window. */
-  usage_platform_names: string[]
+
+  /* ---- Distribution footprint ---- */
+  /** Distinct destination accounts the segment is enabled on. */
   active_destination_accounts: number
+  /** Distinct buying customers across those accounts. */
   active_buyers: number
-  active_distribution_platforms: number
-  buyers_with_usage: number
-  platforms_with_usage: number
-  impressions: number
-  gross_data_revenue: number
-  provider_net_revenue: number
-  liveramp_net_revenue: number
-  distribution_rank: number
-  impressions_rank: number
-  provider_revenue_rank: number
-  buyer_usage_rank: number
-  platform_usage_rank: number
-  popularity_score: number
-  popularity_rank: number
-  is_highly_distributed: boolean
-  is_highly_used: boolean
-  is_top_n_popular: boolean
-  usage_start_date: string
-  usage_end_date: string
-}
+  /** Distinct ad platforms, i.e. `active_platform_names.length`. */
+  active_platforms: number
+  active_platform_names: string[]
 
-export interface PageInfo {
-  page: number
-  page_size: number
-  total_items: number
-  total_pages: number
-  has_next: boolean
-  has_previous: boolean
-}
-
-export interface CatalogPage {
-  mode: 'catalog'
-  /** CSV file the rows were read from. */
-  source: string
-  pagination: PageInfo
-  items: SegmentFeatureRow[]
-}
-
-export interface SourceCitation {
-  /** e.g. "activation.md" or "BigQuery:best_sellers" */
-  source: string
-  text: string
-  /** 0–1; SQL results use 1.0 */
-  score: number
-}
-
-/** One BigQuery result row. */
-export interface SqlRow {
-  fields: Record<string, string | number | boolean | null>
-}
-
-export interface QueryResponse {
-  /** Synthesised answer with inline "[Source: ...]" markers. */
-  answer: string
-  sources?: SourceCitation[]
-  sql_used?: string | null
-  confidence: number
-  intent: 'analytics' | 'conceptual' | 'lookup' | 'mixed' | 'vague'
-  sql_results?: SqlRow[]
-}
-
-export interface AgentAnswer {
-  mode: 'agent'
-  query: string
-  result: QueryResponse
-}
-
-/* ---------- Segment Intelligence tags API (a second service) ---------- */
-
-/**
- * Wire shapes for the tags backend — `VITE_TAGS_ORIGIN`, default
- * http://localhost:8001. Transcribed from its /openapi.json.
- *
- *   GET /v1/tags                  -> SegmentTagRow[]     (the whole vocabulary)
- *   GET /v1/segments/{id}/tags    -> SegmentTagRow[]     (one segment's tags)
- *   GET /v1/tags/{slug}/segments  -> TagSegmentsPage     (every segment with a tag)
- */
-export interface SegmentTagRow {
-  /** Stable slug, e.g. "top_facebook_activated". */
-  tag_key: string
-  display_name: string
-  /** Why the tag was awarded, e.g. "Top 10% distributed on Facebook". */
-  description: string
-  /** "platform" | "reach" | "distribution" — treated as open-ended. */
-  category: string
-  /** Lower sorts first. Unique across the vocabulary. */
-  priority: number
-}
-
-/** Paging envelope shared by the tags API's list routes. */
-export interface TagsPageInfo {
-  page: number
-  page_size: number
-  total_items: number
-  total_pages: number
-  has_next: boolean
-  has_previous: boolean
-}
-
-/**
- * One page of `GET /v1/tags/{slug}/segments` — the reverse lookup that answers
- * "which segments carry this tag". `items` are raw `dms_segment_id` numbers,
- * nothing else, which is what makes bulk-loading a tag's whole set affordable.
- */
-export interface TagSegmentsPage {
-  tag_key: string
-  pagination: TagsPageInfo
-  items: number[]
-}
-
-/**
- * A catalog row from the tags API. Only the fields the UI would adopt are
- * transcribed; the row carries considerably more.
- *
- * Served today only inside the paged `GET /v1/segments` list — there is no
- * `GET /v1/segments/{id}`, which is why the reach enrichment that reads this is
- * behind `TAGS_REACH_ENABLED`.
- */
-export interface SegmentIntelRow {
-  dms_segment_id: number
+  /* ---- Connect estimated reach ---- */
   cookie_reach: number
   ios_reach: number
   android_reach: number
+  /** Largest reach across every ad network account, cookie included. */
+  max_connect_reach: number
+  /** Records the seller submitted, before identity resolution. */
   input_records: number
-  /** ISO timestamp, e.g. "2025-11-07T00:09:15". */
+  /** Estimated reach per platform, keyed by the names in `active_platform_names`. */
+  reach_by_platform: Record<string, number>
+  /** ISO timestamps, e.g. "2026-01-10T01:15:44Z". */
   cookie_reach_updated_at: string | null
-  tags: SegmentTagRow[]
+  ios_reach_updated_at: string | null
+  android_reach_updated_at: string | null
+
+  /* ---- Delivered usage and lifecycle ---- */
+  /** Impressions delivered against the segment in the last 90 days. */
+  impressions_90d: number
+  /**
+   * Impressions in the 90 days before that, for the growth comparison. `0`
+   * means there is no comparable prior period — the segment is newer than the
+   * window — not that nothing delivered.
+   */
+  impressions_prior_90d: number
+  /** Buy-side media spend running against the segment in the last 90 days, USD. */
+  media_spend_90d: number
+  /** Marketplace revenue the segment earned in the last 90 days, USD. */
+  marketplace_revenue_90d: number
+  /** ISO date the segment was added to the marketplace, e.g. "2026-06-27". */
+  added_at: string
+
+  /* ---- Catalogue-wide ranks and flags ---- */
+  /** 1 = most widely distributed. Ranked over the API's full catalogue. */
+  distribution_rank: number
+  /** 1 = largest cookie reach. Ranked over the API's full catalogue. */
+  reach_rank: number
+  is_highly_distributed: boolean
+  is_highly_reachable: boolean
+  is_top_n_by_reach: boolean
+
+  /**
+   * The labels awarded to this row, by key, resolved against
+   * `LABEL_VOCABULARY`.
+   *
+   * The intel API inlined the whole label object on every row; the fixture
+   * stores keys instead so a label's wording lives in exactly one place. See
+   * `mock/catalogRows.ts` for how they are derived.
+   */
+  label_keys: string[]
+}
+
+/** One entry in the label vocabulary. */
+export interface SegmentLabelRow {
+  /** Stable slug, e.g. "best_seller". */
+  label_key: string
+  display_name: string
+  /**
+   * The *criteria* — what has to be true to earn it, e.g. "Top 5% of its
+   * category cohort by Marketplace revenue". The per-segment reason, quoting that
+   * segment's own numbers, is built by `explainLabel` in
+   * `adapters/catalog.ts`.
+   */
+  description: string
+  /**
+   * "performance" | "demand" | "distribution" | "lifecycle" | "attention" —
+   * treated as open-ended; it picks the chip tone.
+   */
+  category: string
+  /** Lower sorts first. Unique across the vocabulary. */
+  priority: number
 }

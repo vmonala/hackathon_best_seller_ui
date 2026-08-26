@@ -25,11 +25,9 @@ import {
   mockSellerDetail,
 } from './seller'
 import { MOCK_FACETS } from './facets'
-import {
-  MOCK_CATALOG_TOTALS,
-  MOCK_SEGMENTS,
-  mockPerformanceFor,
-} from './segments'
+import { mockDiscoveryAnswer } from './discovery'
+import { buildSegmentDetail } from '../adapters/catalog'
+import { CATALOG, MOCK_CATALOG_TOTALS, MOCK_SEGMENTS } from './segments'
 
 const delay = (ms = MOCK_LATENCY_MS) =>
   new Promise((resolve) => setTimeout(resolve, ms))
@@ -68,18 +66,13 @@ export function filterSellerSegments(query: SellerSegmentQuery): SellerSegment[]
 }
 
 export const mockApi = {
-  async listSegments(
-    query: SegmentQuery,
-    tagIds?: ReadonlySet<string> | null,
-  ): Promise<Paginated<Segment>> {
+  async listSegments(query: SegmentQuery): Promise<Paginated<Segment>> {
     await delay()
     return {
-      // Tags come from a live-only service, so `tagIds` is null under fixtures
-      // and the tag filter is not offered — it is honoured here regardless so
-      // the two adapters stay interchangeable.
-      ...runSegmentQuery(MOCK_SEGMENTS, query, tagIds ?? null),
-      // The fixtures stand in for a much larger catalogue, so the footer
-      // totals come from the scenario rather than from the 12 rows on hand.
+      ...runSegmentQuery(MOCK_SEGMENTS, query),
+      // The captured rows are one slice of a much larger marketplace — the
+      // ranks on them run past 80,000 — so the footer totals quote the scale of
+      // the catalogue those ranks were computed over, not the rows on hand.
       totalUnfiltered: MOCK_CATALOG_TOTALS.catalogTotal,
       totalBeforeLabelFilters: MOCK_CATALOG_TOTALS.filteredTotal,
     }
@@ -87,9 +80,9 @@ export const mockApi = {
 
   async getSegment(id: string): Promise<SegmentDetail> {
     await delay()
-    const segment = MOCK_SEGMENTS.find((s) => s.id === id)
-    if (!segment) throw new Error(`Segment ${id} not found`)
-    return { ...segment, performance: mockPerformanceFor(segment) }
+    const entry = CATALOG.byId.get(id)
+    if (!entry) throw new Error(`Segment ${id} not found`)
+    return buildSegmentDetail(entry, CATALOG)
   },
 
   async getFacets(): Promise<SegmentFacets> {
@@ -97,48 +90,14 @@ export const mockApi = {
     return MOCK_FACETS
   },
 
+  /**
+   * A canned answer per topic. The routing and the copy live in
+   * `./discovery` — each suggestion chip in the panel lands on a different
+   * slice of the catalogue, ranked on a different angle.
+   */
   async askDiscovery(question: string): Promise<AiDiscoveryResponse> {
     await delay(900)
-    const top = MOCK_SEGMENTS.filter((s) =>
-      ['4481902', '4481903', '4481904'].includes(s.id),
-    ).sort((a, b) => b.marketplaceScore - a.marketplaceScore)
-
-    const why: Record<string, string> = {
-      '4481902':
-        'Top 5% of retail segments by delivered impressions on Facebook and Snapchat; used in every one of the last 13 weeks; most buyers who ran it once ran it again.',
-      '4481903':
-        'Usage on Snapchat has roughly doubled versus the previous 90 days — the fastest-rising smartwatch segment on that platform.',
-      '4481904':
-        'Purchase-based rather than intent-based, and the most repeatedly licensed wearables segment in the category.',
-    }
-    const extra: Record<string, string | undefined> = {
-      '4481903': 'Strongest on Snapchat',
-    }
-
-    return {
-      id: crypto.randomUUID(),
-      question,
-      lead: 'Here are the three most-used retail wearables segments that are **already delivering on both Facebook and Snapchat**, ranked by activity over the last 90 days rather than by catalogue reach alone.',
-      recommendations: top.map((s, i) => ({
-        rank: i + 1,
-        segmentId: s.id,
-        fullPath: s.fullPath,
-        marketplaceScore: s.marketplaceScore,
-        labels: s.labels,
-        platformCount: s.platformCount,
-        extraBadge: extra[s.id],
-        meta: [
-          'Facebook **live**',
-          'Snapchat **live**',
-          `${s.advertiserDirectPctOfMedia}% of media`,
-          `${(s.cookieReach / 1_000_000).toFixed(1)}M cookie reach`,
-        ],
-        why: why[s.id] ?? '',
-      })),
-      note: '**Why these three?** 26 retail smartwatch segments are distributable to Facebook and Snapchat. I ranked them on delivered usage, repeat licensing and continuity — not on price or reach. Labels reflect aggregate marketplace activity, not campaign outcomes for your KPIs.',
-      candidateSegmentIds: top.map((s) => s.id),
-      totalCandidates: 26,
-    }
+    return mockDiscoveryAnswer(question)
   },
 
   async listSellerSegments(
